@@ -71,3 +71,6 @@ public:
     // 4. Giải mã nội dung bằng file_key
     void receiveSharedNote(int share_id);
 };
+
+
+
