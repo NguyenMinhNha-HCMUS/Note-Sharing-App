@@ -1,12 +1,21 @@
 #pragma once
 #include <string>
 
-class Auth {
-public:
-    // Tạo JWT token từ user_id và username
-    static std::string generateToken(int user_id, std::string username);
-    
-    // Kiểm tra token, trả về user_id. Trả về -1 nếu lỗi.
-    static int verifyToken(std::string token);
+struct TokenPayload {
+    int user_id;
+    std::string username;
+    bool valid;
+    long long exp; // unix timestamp (seconds) when token expires
 };
 
+class Auth {
+public:
+    // Generate a signed token from user_id and username
+    static std::string generateToken(int user_id, std::string username);
+    
+    // Verify token and extract payload. Returns valid=false if invalid.
+    static TokenPayload verifyToken(std::string token);
+    
+    // Helper to extract token from Authorization header (handles "Bearer " prefix)
+    static std::string extractToken(const std::string& authHeader);
+};
