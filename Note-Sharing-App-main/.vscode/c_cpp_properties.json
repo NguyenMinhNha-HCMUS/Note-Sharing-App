@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "MinGW",
+            "includePath": [
+                // Đường dẫn chuẩn của dự án
+                "${workspaceFolder}/**",
+                // ĐƯỜNG DẪN BẮT BUỘC CHO OPENSSL (MSYS2/MinGW)
+                "C:/msys64/mingw64/include"
+            ],
+            // MACRO CẦN THIẾT CHO httplib kích hoạt OpenSSL
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "CPPHTTPLIB_OPENSSL_SUPPORT"
+            ],
+            "compilerPath": "C:/msys64/mingw64/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}
