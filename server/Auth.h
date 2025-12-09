@@ -5,6 +5,7 @@ struct TokenPayload {
     int user_id;
     std::string username;
     bool valid;
+    long long exp; // unix timestamp (seconds) when token expires
 };
 
 class Auth {
