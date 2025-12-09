@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/lab02_mhmm/Note-Sharing-App-main/Note-Sharing-App-main/client",
-      "program": "d:/lab02_mhmm/Note-Sharing-App-main/Note-Sharing-App-main/client/build/Debug/outDebug",
+      "cwd": "c:/Users/MYPC/Documents/Note-Sharing-App",
+      "program": "c:/Users/MYPC/Documents/Note-Sharing-App/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
