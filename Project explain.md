@@ -169,3 +169,87 @@ Dưới đây là danh sách các biến dữ liệu quan trọng mà Client qu�
 | `file_content` | `vector<byte>` | Nội dung file gốc (Plain text). |
 
 ## 4. Cấu trúc Cơ sở dữ liệu (SQLite)
+
+Cơ sở dữ liệu SQLite (`secure_notes.db`) chứa 5 bảng chính để quản lý người dùng, ghi chú và các tính năng chia sẻ:
+
+### 4.1. Bảng `Users` (Thông tin người dùng)
+
+| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID định danh duy nhất của người dùng. |
+| `username` | TEXT | UNIQUE NOT NULL | Tên đăng nhập duy nhất. |
+| `password_hash` | TEXT | NOT NULL | Mật khẩu đã băm (SHA256 + Salt). **Không lưu mật khẩu gốc.** |
+| `salt` | TEXT | NOT NULL | Chuỗi ngẫu nhiên dùng để băm mật khẩu và tạo Master Key. |
+| `receive_public_key_hex` | TEXT | NOT NULL | Khóa công khai ECDH (Receive Key) để người khác tìm và gửi file. |
+
+### 4.2. Bảng `Notes` (Dữ liệu ghi chú)
+
+| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID định danh duy nhất của ghi chú. |
+| `user_id` | INTEGER | NOT NULL, FOREIGN KEY → Users(id) | ID người sở hữu ghi chú. |
+| `encrypted_content` | TEXT | NOT NULL | Nội dung file **đã mã hóa AES**. Server không đọc được. |
+| `wrapped_key` | TEXT | NOT NULL | Khóa file **đã mã hóa** (bởi Master Key hoặc Session Key). |
+| `iv_hex` | TEXT | NOT NULL | Vector khởi tạo (IV) cần thiết cho giải mã AES, định dạng hex. |
+| `created_at` | INTEGER | NOT NULL | Thời gian tạo (Unix timestamp). |
+
+### 4.3. Bảng `SharedLinks` (Liên kết chia sẻ công khai)
+
+Bảng này quản lý các liên kết chia sẻ công khai với danh sách người dùng được phép truy cập (whitelist).
+
+| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID định danh duy nhất của liên kết. |
+| `token` | TEXT | UNIQUE NOT NULL | Token ngẫu nhiên duy nhất để truy cập liên kết. |
+| `note_id` | INTEGER | NOT NULL, FOREIGN KEY → Notes(id) | ID ghi chú được chia sẻ. |
+| `owner_id` | INTEGER | NOT NULL, FOREIGN KEY → Users(id) | ID người sở hữu ghi chú (người tạo liên kết). |
+| `expiration_time` | INTEGER | NOT NULL | Thời gian hết hạn của liên kết (Unix timestamp). |
+
+### 4.4. Bảng `SharedLinkAccess` (Danh sách truy cập liên kết)
+
+Bảng này lưu trữ danh sách người dùng được phép truy cập qua một liên kết chia sẻ cụ thể. Mỗi người dùng có khóa mã hóa riêng.
+
+| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID định danh duy nhất của bản ghi truy cập. |
+| `link_id` | INTEGER | NOT NULL, FOREIGN KEY → SharedLinks(id) | ID liên kết chia sẻ. |
+| `username` | TEXT | NOT NULL | Tên người dùng được phép truy cập. |
+| `send_public_key_hex` | TEXT | NOT NULL | Khóa công khai ECDH tạm thời (Send Key) của người gửi. |
+| `wrapped_key` | TEXT | NOT NULL | Khóa file đã mã hóa bằng Session Key cho người dùng này. |
+
+### 4.5. Bảng `UserShares` (Chia sẻ trực tiếp giữa người dùng)
+
+Bảng này quản lý việc chia sẻ ghi chú trực tiếp từ người dùng này sang người dùng khác (User-to-User sharing).
+
+| Cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID định danh duy nhất của bản ghi chia sẻ. |
+| `note_id` | INTEGER | NOT NULL, FOREIGN KEY → Notes(id) | ID ghi chú được chia sẻ. |
+| `sender_id` | INTEGER | NOT NULL, FOREIGN KEY → Users(id) | ID người gửi (người sở hữu ghi chú). |
+| `recipient_id` | INTEGER | NOT NULL, FOREIGN KEY → Users(id) | ID người nhận. |
+| `send_public_key_hex` | TEXT | NOT NULL | Khóa công khai ECDH tạm thời (Send Key) của người gửi. |
+| `new_wrapped_key` | TEXT | NOT NULL | Khóa file đã mã hóa lại bằng Session Key ECDH. |
+| `expiration_time` | INTEGER | NOT NULL | Thời gian hết hạn của quyền truy cập (Unix timestamp). |
+
+### 4.6. Quan hệ giữa các bảng (Foreign Keys)
+
+```
+Users (id)
+  ├── Notes (user_id)
+  │     ├── SharedLinks (note_id)
+  │     └── UserShares (note_id)
+  ├─ SharedLinks (owner_id)
+  ├─ UserShares (sender_id)
+  └─ UserShares (recipient_id)
+
+SharedLinks (id)
+  └─ SharedLinkAccess (link_id)
+```
+
+### 4.7. Ghi chú về Bảo mật
+
+*   **Không lưu trữ dữ liệu nhạy cảm**: Server không bao giờ lưu trữ mật khẩu gốc, Master Key, hoặc nội dung file chưa mã hóa.
+*   **Mã hóa end-to-end**: Tất cả nội dung file được mã hóa trên Client trước khi gửi lên Server.
+*   **Key Wrapping**: Khóa file được bao gói bằng Master Key hoặc Session Key ECDH, đảm bảo chỉ người có quyền mới giải mã được.
+*   **Ephemeral Keys**: Send Key được tạo tạm thời và xóa ngay sau khi chia sẻ để tăng cường bảo mật.
+*   **Expiration Time**: Các liên kết chia sẻ và quyền truy cập có thời gian hết hạn để giới hạn rủi ro bảo mật.
