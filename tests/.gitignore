@@ -1,0 +1,11 @@
+# Test build artifacts
+test_runner
+*.o
+*.db
+test_secure_notes.db
+secure_notes.db
+
+# Compiled binaries
+*.out
+*.exe
+
