@@ -21,7 +21,7 @@
 ### 1.2. Kiến trúc hệ thống
 
 Ứng dụng được xây dựng theo mô hình **Client-Server** với kiến trúc 3 tầng:
-![Alt_text](../images/sys.png)
+![Alt_text](./images/sys.png)
 **Thành phần chính:**
 
 1. **Server (Backend)**
@@ -627,12 +627,12 @@ Thiết kế của hệ thống tuân theo 3 nguyên tắc bảo mật cốt lõ
 ### 2.5. Sơ đồ luồng hoạt động
 
 #### **A. Luồng Đăng ký & Tạo khóa (Registration Flow)**
-![Alt_text](../images/register.png)
+![Alt_text](./images/register.png)
 
 #### **B. Luồng Upload File (Secure Upload Flow)**
-![Alt_text](../images/upload.png)
+![Alt_text](./images/upload.png)
 
 #### **C. Luồng Chia sẻ qua Link (Whitelist Sharing Flow)**
 
-![Alt_text](../images/share.png)
+![Alt_text](./images/share.png)
 ---
