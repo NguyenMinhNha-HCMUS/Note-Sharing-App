@@ -11,7 +11,7 @@
 - 📁 **Hỗ trợ file**: Upload/download bất kỳ loại file nào với tên file gốc
 - ⏰ **Thời gian hết hạn**: Tự động hết hạn link/share sau thời gian định trước
 - 🧪 **Test Suite**: Bộ test tự động bằng C++ với 17+ test cases
-- 🔒 **JWT Authentication**: Xác thực token với TTL cấu hình được
+- 🔒 **JWT Authentication**: Xác thực token với TTL 30 phút
 
 ## 📋 Yêu cầu hệ thống
 
@@ -38,10 +38,10 @@ pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-openssl
 **Thêm vào PATH** (quan trọng!):
 ```powershell
 # PowerShell - thêm tạm thời
-$env:PATH = "D:\msys64\ucrt64\bin;$env:PATH"
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
 
 # Hoặc thêm vĩnh viễn qua System Properties > Environment Variables
-# Thêm: D:\msys64\ucrt64\bin  (điều chỉnh đường dẫn nếu cài ở chỗ khác)
+# Thêm: C:\msys64\ucrt64\bin  (điều chỉnh đường dẫn nếu cài ở chỗ khác)
 ```
 
 #### 2. **Kiểm tra cài đặt**
@@ -118,17 +118,42 @@ Server sẽ lắng nghe trên `http://localhost:8080`
 g++ test/auto_test.cpp -o auto_test.exe -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00 -lws2_32 -lwsock32 -lcrypt32
 ```
 
+### Cấu hình test:
+
+Chỉnh sửa file `test/test_config.json` để thay đổi các thông số test:
+
+```json
+{
+  "server": {
+    "host": "localhost",
+    "port": 8080
+  },
+  "token": {
+    "ttl_seconds": 60,
+    "expiration_wait_time": 65
+  },
+  "test_users": {
+    "alice": {
+      "username": "alice_test",
+      "password": "password123"
+    },
+    "bob": {...},
+    "charlie": {...}
+  },
+  "test_options": {
+    "verbose": true,
+    "test_expiration": true
+  }
+}
+```
+
 ### Chạy test (cần server đang chạy):
 ```powershell
-# Chạy với TTL mặc định (60 giây)
+# Chạy test với config từ test/test_config.json
 .\auto_test.exe
 
-# Chạy với TTL tùy chỉnh
-.\auto_test.exe --token-ttl=30
-
-# Hoặc dùng environment variable
-$env:TEST_TOKEN_TTL = "30"
-.\auto_test.exe
+# Xem help
+.\auto_test.exe --help
 ```
 
 ### Hoặc dùng script tự động:
@@ -136,6 +161,8 @@ $env:TEST_TOKEN_TTL = "30"
 .\test\build_and_run.ps1
 ```
 Script này sẽ tự động khởi động server, reset database, và chạy test.
+
+**Lưu ý:** Test config độc lập với server. Thay đổi config không cần rebuild test.
 
 **Xem hướng dẫn test chi tiết:** [test/README.md](test/README.md)
 
@@ -146,35 +173,46 @@ Script này sẽ tự động khởi động server, reset database, và chạy 
 - **[HUONG_DAN_SU_DUNG.md](HUONG_DAN_SU_DUNG.md)** - Hướng dẫn sử dụng đầy đủ
 - **[Project explain.md](Project%20explain.md)** - Giải thích kiến trúc và cơ chế mã hóa
 - **[test/README.md](test/README.md)** - Hướng dẫn test và 40 test cases thủ công
-- **[test/TOKEN_TTL_GUIDE.md](test/TOKEN_TTL_GUIDE.md)** - Cấu hình token TTL cho testing
+- **[test/test_config.json](test/test_config.json)** - File cấu hình test (có thể chỉnh sửa)
 
 ---
 
 ## ⚙️ Cấu hình nâng cao
 
-### Thay đổi Token TTL
+### Token Time-to-Live (TTL)
 
 **Server:**
-```powershell
-# Set token timeout (giây)
-$env:SERVER_TOKEN_TTL = "3600"  # 1 giờ
-.\server_app.exe
-```
+- Token TTL được cố định: **30 phút (1800 giây)**
+- Để thay đổi, chỉnh trực tiếp trong [server/Auth.cpp](server/Auth.cpp#L11):
+  ```cpp
+  static const long long TOKEN_TTL_SECONDS = 1800; // 30 minutes
+  ```
+- Sau khi thay đổi, rebuild server: `.\build_all.ps1`
 
-**Test Client:**
-```powershell
-# Dùng environment variable
-$env:TEST_TOKEN_TTL = "30"
-.\auto_test.exe
-
-# Hoặc command line argument
-.\auto_test.exe --token-ttl=30
-```
+**Test:**
+- Test có thể dùng TTL khác để kiểm tra expiration
+- Chỉnh trong `test/test_config.json`:
+  ```json
+  "token": {
+    "ttl_seconds": 60,
+    "expiration_wait_time": 65
+  }
+  ```
+- Không cần rebuild test sau khi thay đổi config
 
 ### Reset Database
 ```powershell
 # Xóa database để bắt đầu lại
-Remove-Item server_data.db -Force
+Remove-Item secure_notes.db -Force
+```
+
+### Clean Build Artifacts
+```powershell
+# Xóa tất cả file .o và .exe
+Remove-Item *.o, *.exe -Force
+
+# Hoặc dùng build script
+.\build_all.ps1 -Clean
 ```
 
 ---
@@ -185,7 +223,7 @@ Remove-Item server_data.db -Force
 Project/
 ├── server/              # Server code
 │   ├── server_main.cpp  # API endpoints (14 APIs)
-│   ├── Auth.cpp         # JWT authentication
+│   ├── Auth.cpp         # JWT authentication (TTL: 30 min)
 │   └── Database.cpp     # SQLite operations
 ├── client/              # Client code
 │   ├── client_app_logic.cpp
@@ -195,6 +233,7 @@ Project/
 │   └── Protocol.h       # Shared data structures
 ├── test/                # Test suite
 │   ├── auto_test.cpp    # 17+ automated tests
+│   ├── test_config.json # Test configuration file
 │   ├── build_and_run.ps1
 │   └── *.md             # 40 manual test cases
 ├── vendor/              # Dependencies
@@ -202,7 +241,8 @@ Project/
 │   ├── httplib.h        # HTTP client library
 │   ├── json.hpp         # JSON parser
 │   └── sqlite3.*        # Database
-├── build_all.ps1        # Build script chính
+├── build_all.ps1        # Build script chính (1 lệnh build all)
+├── secure_notes.db      # SQLite database (tự tạo khi chạy server)
 └── README.md            # File này
 ```
 
@@ -238,12 +278,13 @@ Project/
 $env:PATH
 
 # Thêm tạm thời (session hiện tại)
-$env:PATH = "D:\msys64\ucrt64\bin;$env:PATH"
+# Thay đổi đường dẫn theo nơi bạn cài MSYS2
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
 
 # Hoặc thêm vĩnh viễn:
 # 1. Windows Search > "Environment Variables"
 # 2. System Properties > Environment Variables
-# 3. Thêm: D:\msys64\ucrt64\bin vào PATH
+# 3. Thêm: C:\msys64\ucrt64\bin vào PATH (hoặc đường dẫn MSYS2 của bạn)
 ```
 
 ### Lỗi: "OpenSSL headers not found"

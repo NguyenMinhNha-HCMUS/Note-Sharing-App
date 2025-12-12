@@ -1,0 +1,28 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 8080
+  },
+  "token": {
+    "ttl_seconds": 60,
+    "expiration_wait_time": 65
+  },
+  "test_users": {
+    "alice": {
+      "username": "user1",
+      "password": "1"
+    },
+    "bob": {
+      "username": "user2",
+      "password": "2"
+    },
+    "charlie": {
+      "username": "user3",
+      "password": "3"
+    }
+  },
+  "test_options": {
+    "verbose": true,
+    "test_expiration": true
+  }
+}
