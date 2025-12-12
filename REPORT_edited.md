@@ -1,4 +1,5 @@
-# BÁO CÁO ĐỒ ÁN LAB 02 - ỨNG DỤNG CHIA SẺ GHI CHÚ
+
+# BÁO CÁO ĐỒ ÁN 02 - ỨNG DỤNG CHIA SẺ GHI CHÚ
 
 
 ## MỤC LỤC
@@ -61,7 +62,7 @@ pacman -Syu
 pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-openssl
 
 # 3. Thêm vào PATH (PowerShell)
-$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH" (thay đổi đường dẫn theo nơi cài đặt) 
 ```
 
 **Kiểm tra cài đặt:**
@@ -71,8 +72,6 @@ openssl version    # Phải OpenSSL 3.x
 ```
 
 #### **Bước 2: Build ứng dụng**
-
-**Cách 1: Build tất cả bằng 1 lệnh (Khuyến nghị)**
 ```powershell
 # Từ thư mục gốc của project
 .\build_all.ps1
@@ -85,41 +84,14 @@ Script này sẽ tự động:
 - Link các module và tạo file thực thi
 - Hiển thị kết quả từng bước
 
-**Cách 2: Build thủ công từng phần**
-
-*Server:*
-```powershell
-gcc -c vendor/sqlite3.c -o sqlite3.o
-g++ -c server/server_main.cpp -o server_main.o -std=c++17 -I vendor/asio_lib -I vendor
-g++ -c server/Auth.cpp -o Auth.o -std=c++17 -I vendor
-g++ -c server/Database.cpp -o Database.o -std=c++17 -I vendor
-g++ -c common/Crypto.cpp -o Crypto.o -std=c++17 -I vendor
-g++ server_main.o Auth.o Database.o Crypto.o sqlite3.o -o server_app.exe -lws2_32 -lwsock32 -lcrypto -lssl
-```
-
-*Client:*
-```powershell
-g++ -c client_main.cpp -o client_main.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
-g++ -c client/client_app_logic.cpp -o client_app_logic.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
-g++ -c client/network.cpp -o network.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
-g++ client_main.o client_app_logic.o network.o Crypto.o -o client_app.exe -lws2_32 -lwsock32 -lcrypto -lssl -lcrypt32
-```
-
-**Clean và rebuild:**
-```powershell
-.\build_all.ps1 -Clean
-```
-
 #### **Bước 3: Chạy ứng dụng**
 
 **Mở 2 terminal riêng biệt:**
 
 *Terminal 1 - Khởi động Server:*
 ```powershell
-cd L:\Nam4_ki1\Crypto\Lab\Lab02\Project
 .\server_app.exe
 ```
-
 Kết quả mong đợi:
 ```
 Server running on port 8080
@@ -127,7 +99,6 @@ Server running on port 8080
 
 *Terminal 2 - Chạy Client:*
 ```powershell
-cd L:\Nam4_ki1\Crypto\Lab\Lab02\Project
 .\client_app.exe
 ```
 
@@ -147,11 +118,8 @@ Menu client sẽ hiển thị:
 0. Thoat
 Chon:
 ```
-
 #### **Bước 4: Sử dụng cơ bản**
-
 **Luồng sử dụng điển hình:**
-
 1. **Đăng ký tài khoản**
    - Chọn option `1`
    - Nhập username và password
@@ -221,182 +189,6 @@ Chon:
 | 4 | **Key Wrapping** | Các file key được wrap bằng Master Key (từ password) hoặc Session Key (từ ECDH). | AES-256-CBC key wrapping |
 | 5 | **Access Control** | Người dùng chỉ truy cập được note của mình hoặc note được chia sẻ hợp lệ. | Database + Token validation |
 
-### 1.5. Tính năng nâng cao
-
-#### **1. Hỗ trợ tên file gốc (Filename Preservation)**
-
-**Vấn đề giải quyết:**  
-Nhiều hệ thống chỉ lưu ID hoặc hash của file, khiến người dùng không biết file gốc là gì.
-
-**Giải pháp:**
-- Lưu trữ tên file gốc trong database (trường `filename`)
-- Khi download, tự động đặt lại tên file gốc
-- Client tự động tạo thư mục `upload/` và `download/` nếu chưa có
-
-**Ví dụ:**
-```
-Upload: upload/thesis.pdf → Lưu với filename="thesis.pdf"
-Download: ID=123 → Tải về download/thesis.pdf
-```
-
-#### **2. Whitelist-based Sharing**
-
-**Đặc điểm:**
-- Không phải ai có link cũng truy cập được
-- Chỉ những username trong danh sách mới có quyền
-- Mỗi người có Session Key riêng (qua ECDH)
-
-**Quy trình:**
-```
-1. Alice tạo link share cho Bob và Charlie
-2. Server tạo token, lưu whitelist: [Bob, Charlie]
-3. Bob truy cập → Server check username → OK
-4. Dave truy cập → Server check username → DENIED (403)
-```
-
-**Database schema:**
-```sql
--- Bảng SharedLinkAccess lưu từng username được phép
-CREATE TABLE SharedLinkAccess (
-    id INTEGER PRIMARY KEY,
-    link_id INTEGER,
-    username TEXT,
-    send_public_key_hex TEXT,
-    wrapped_key TEXT,
-    FOREIGN KEY(link_id) REFERENCES SharedLinks(id)
-);
-```
-
-#### **3. Expiration Time cho Share Links**
-
-**Tính năng:**
-- Mọi link chia sẻ đều có thời gian hết hạn
-- Server tự động kiểm tra khi truy cập
-- Link hết hạn trả về lỗi 403
-
-**Cách hoạt động:**
-```cpp
-// Khi tạo link
-int duration_seconds = 3600; // 1 giờ
-long long expiration_time = current_time() + duration_seconds;
-
-// Khi truy cập
-if (current_time() > expiration_time) {
-    return 403; // Link đã hết hạn
-}
-```
-
-**Lợi ích:**
-- Giảm rủi ro link bị leak sau một thời gian dài
-- Người dùng kiểm soát được thời gian chia sẻ
-
-#### **4. My Shares API - Quản lý sharing đã tạo**
-
-**Endpoint mới:** `GET /myshares`
-
-**Chức năng:**
-- Liệt kê tất cả notes mà người dùng đã chia sẻ
-- Hiển thị danh sách người được chia sẻ cho từng note
-- Hiển thị trạng thái hết hạn
-
-**Response format:**
-```json
-[
-  {
-    "note_id": 1,
-    "share_link": "http://localhost:8080/share/abc123...",
-    "expiration_time": 1765542313,
-    "is_expired": false,
-    "shared_with": ["bob_test", "charlie_test"]
-  }
-]
-```
-
-**Ưu điểm:**
-- Người dùng biết mình đang chia sẻ gì với ai
-- Dễ dàng theo dõi và quản lý quyền truy cập
-- Hỗ trợ audit trail
-
-#### **5. Automated Test Suite**
-
-**Đặc điểm:**
-- 13 test cases tự động bằng C++
-- Không cần Python hay tool bên ngoài
-- Config qua file JSON (`test/test_config.json`)
-
-**Test categories:**
-1. **Authentication Tests** (5 tests)
-   - Register success/duplicate
-   - Login success/wrong password/non-existent user
-   - Request without token
-
-2. **Basic Operations** (3 tests)
-   - Upload note
-   - List notes
-   - Get note by ID
-
-3. **Access Control** (3 tests)
-   - Unauthorized access denied
-   - Create share link
-   - Whitelist user can access
-
-4. **My Shares API** (2 tests)
-   - List shares
-   - Verify shared_with array
-
-**Chạy test:**
-```powershell
-# Build test
-g++ test/auto_test.cpp -o auto_test.exe -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00 -lws2_32 -lwsock32 -lcrypt32
-
-# Chạy test (server phải đang chạy)
-.\auto_test.exe
-```
-
-**Kết quả:**
-```
-============================================================
-FINAL RESULTS
-============================================================
-Total: 13/13 tests passed
-Success Rate: 100.0%
-
-ALL TESTS PASSED!
-```
-
-#### **6. Build Script tự động**
-
-**File:** `build_all.ps1`
-
-**Tính năng:**
-- Build cả server và client bằng 1 lệnh
-- Hiển thị progress từng bước
-- Tự động kiểm tra lỗi
-- Hỗ trợ clean build
-
-**Sử dụng:**
-```powershell
-.\build_all.ps1           # Build bình thường
-.\build_all.ps1 -Clean    # Xóa artifacts cũ và build lại
-```
-
-**Output:**
-```
-=======================================
-  Building Server...
-=======================================
-[1/6] Compiling sqlite3.c... OK
-[2/6] Compiling server_main.cpp... OK
-[3/6] Compiling Auth.cpp... OK
-[4/6] Compiling Database.cpp... OK
-[5/6] Compiling Crypto.cpp... OK
-[6/6] Linking server_app.exe... OK
-
-Server build successful: server_app.exe
-...
-Build completed successfully!
-```
-
 ### 1.6. Công nghệ sử dụng
 
 **Bảng tổng hợp:**
@@ -415,32 +207,9 @@ Build completed successfully!
 | **Key Derivation** | PBKDF2-SHA256 | 10k iterations | Sinh khóa từ password |
 | **Authentication** | JWT | Custom | Xác thực token |
 
-**Lý do lựa chọn:**
-
-1. **C++17**: 
-   - Performance cao
-   - Hỗ trợ tốt cho cryptography
-   - Memory safety với RAII
-
-2. **OpenSSL**:
-   - Library mật mã được tin cậy nhất
-   - Hỗ trợ đầy đủ các thuật toán chuẩn
-   - Được kiểm toán bảo mật kỹ lưỡng
-
-3. **SQLite**:
-   - Embedded database, không cần server riêng
-   - ACID compliant
-   - Dễ deploy và backup
-
-4. **Crow Framework**:
-   - Header-only, dễ tích hợp
-   - Syntax giống Flask (Python)
-   - Performance tốt
-
-### 1.7. Cấu trúc thư mục
-
+### 1.5. Cấu trúc thư mục
 ```
-Project/
+project_02_source/
 ├── server/                      # Server code
 │   ├── server_main.cpp          # API endpoints (14 APIs)
 │   ├── Auth.cpp / Auth.h        # JWT authentication
@@ -472,72 +241,7 @@ Project/
 ├── download/                    # Downloaded files
 │
 ├── build_all.ps1                # Build script
-├── README.md                    # Documentation
-├── REPORT.md                    # This file
 └── secure_notes.db              # SQLite database (created at runtime)
-```
-
-### 1.8. Database Schema
-
-**5 bảng chính:**
-
-```sql
--- 1. Users: Thông tin người dùng
-CREATE TABLE Users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
-    receive_public_key_hex TEXT NOT NULL
-);
-
--- 2. Notes: Ghi chú đã mã hóa
-CREATE TABLE Notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    encrypted_content TEXT NOT NULL,
-    wrapped_key TEXT NOT NULL,
-    iv_hex TEXT NOT NULL,
-    filename TEXT,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES Users(id)
-);
-
--- 3. SharedLinks: Link chia sẻ tạm thời
-CREATE TABLE SharedLinks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT UNIQUE NOT NULL,
-    note_id INTEGER NOT NULL,
-    owner_id INTEGER NOT NULL,
-    expiration_time INTEGER NOT NULL,
-    FOREIGN KEY(note_id) REFERENCES Notes(id),
-    FOREIGN KEY(owner_id) REFERENCES Users(id)
-);
-
--- 4. SharedLinkAccess: Whitelist cho link
-CREATE TABLE SharedLinkAccess (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    link_id INTEGER NOT NULL,
-    username TEXT NOT NULL,
-    send_public_key_hex TEXT NOT NULL,
-    wrapped_key TEXT NOT NULL,
-    FOREIGN KEY(link_id) REFERENCES SharedLinks(id)
-);
-
--- 5. UserShares: Chia sẻ trực tiếp giữa users
-CREATE TABLE UserShares (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    note_id INTEGER NOT NULL,
-    sender_id INTEGER NOT NULL,
-    recipient_id INTEGER NOT NULL,
-    send_public_key_hex TEXT NOT NULL,
-    new_wrapped_key TEXT NOT NULL,
-    expiration_time INTEGER,
-    FOREIGN KEY(note_id) REFERENCES Notes(id),
-    FOREIGN KEY(sender_id) REFERENCES Users(id),
-    FOREIGN KEY(recipient_id) REFERENCES Users(id)
-);
----
 ```
 ## 2. THIẾT KẾ VÀ KIẾN TRÚC
 
@@ -578,23 +282,9 @@ Hệ thống được thiết kế theo mô hình **Client-Server** truyền th�
   - **Wrapper**: Bao đóng các hàm phức tạp của OpenSSL thành API đơn giản (ví dụ: `encryptAES`, `hashSHA256`).
   - **Consistency**: Đảm bảo thuật toán thống nhất giữa hai đầu.
 
-### 2.3. Công nghệ và Công cụ sử dụng
 
-Bảng dưới đây liệt kê chi tiết các công nghệ, thư viện và công cụ được sử dụng trong dự án:
 
-| Loại | Tên công cụ/Thư viện | Phiên bản | Ghi chú |
-|------|----------------------|-----------|---------|
-| **Ngôn ngữ lập trình** | C++ | Standard 17 (C++17) | Sử dụng các tính năng hiện đại như `std::filesystem`, `std::optional`. |
-| **Trình biên dịch** | GCC (GNU Compiler Collection) | 14.2.0 | Cài đặt qua MSYS2 UCRT64 trên Windows. |
-| **Thư viện Mật mã** | OpenSSL | 3.x | Thư viện chuẩn công nghiệp cho crypto. |
-| **Web Framework** | Crow | Latest (Master branch) | C++ Microframework cho Web (Header-only). |
-| **HTTP Client** | cpp-httplib | 0.14.1+ | Thư viện HTTP client đơn giản (Header-only). |
-| **Cơ sở dữ liệu** | SQLite | 3.42+ | Database engine nhỏ gọn, không cần server riêng. |
-| **Xử lý JSON** | nlohmann/json | 3.11.2 | Thư viện JSON for Modern C++. |
-| **Build System** | PowerShell Script | 5.1 / 7.x | Script tự viết để build tự động (`build_all.ps1`). |
-| **IDE/Editor** | Visual Studio Code | Latest | Môi trường phát triển tích hợp. |
-
-### 2.4. Mục đích thiết kế
+### 2.3. Mục đích thiết kế
 
 Thiết kế của hệ thống tuân theo 3 nguyên tắc bảo mật cốt lõi:
 
@@ -609,7 +299,7 @@ Thiết kế của hệ thống tuân theo 3 nguyên tắc bảo mật cốt lõ
     *   Kiến trúc REST API giúp hệ thống dễ dàng mở rộng.
     *   SQLite đảm bảo dữ liệu luôn sẵn sàng truy xuất mà không phụ thuộc vào database server phức tạp.
 
-### 2.5. Sơ đồ luồng hoạt động
+### 2.4. Sơ đồ luồng hoạt động
 
 #### **A. Luồng Đăng ký & Tạo khóa (Registration Flow)**
 ![Alt_text](./images/register.png)
