@@ -26,11 +26,11 @@ int main() {
         std::cout << "4. Tai file ve\n";
         std::cout << "5. Liet ke ghi chu\n";
         std::cout << "6. Xoa ghi chu\n";
-        std::cout << "7. Chia se voi nguoi dung\n";
-        std::cout << "8. Tao link chia se tam thoi\n";
+        std::cout << "7. Tao link chia se tam thoi\n";
+        std::cout << "8. Xem ghi chu ban da chia se\n";        
         std::cout << "9. Truy cap link chia se\n";
         std::cout << "10. Huy chia se\n";
-        std::cout << "11. Xem ghi chu duoc chia se\n";
+        //std::cout << "10. Xem ghi chu duoc chia se\n";
         std::cout << "0. Thoat\n";
         std::cout << "Chon: ";
         std::cin >> choice;
@@ -75,14 +75,6 @@ int main() {
             app.deleteNote(id);
         }
         else if (choice == 7) {
-            int id, duration;
-            std::string recipient;
-            std::cout << "Nhap ID ghi chu: "; std::cin >> id;
-            std::cout << "Nhap ten nguoi nhan: "; std::cin >> recipient;
-            std::cout << "Thoi gian chia se (giay): "; std::cin >> duration;
-            app.shareNoteWithUser(id, recipient, duration);
-        }
-        else if (choice == 8) {
             int id, duration, num_users;
             std::cout << "Nhap ID ghi chu: "; std::cin >> id;
             std::cout << "So luong nguoi duoc phep truy cap: "; std::cin >> num_users;
@@ -97,6 +89,9 @@ int main() {
             std::cout << "Link chia se: " << link << "\n";
             std::cout << "Chi cac user da chi dinh moi truy cap duoc!\n";
         }
+        else if (choice == 8) {
+            app.listMyShares();
+        }
         else if (choice == 9) {
             std::string token;
             std::cout << "Nhap token chia se: "; std::cin >> token;
@@ -108,11 +103,6 @@ int main() {
             std::string token;
             std::cout << "Nhap token can huy: "; std::cin >> token;
             app.revokeShare(token);
-        }
-        else if (choice == 11) {
-            int share_id;
-            std::cout << "Nhap ID chia se: "; std::cin >> share_id;
-            app.receiveSharedNote(share_id);
         }
         else if (choice == 0) break;
     }

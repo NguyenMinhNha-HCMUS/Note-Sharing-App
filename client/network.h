@@ -16,4 +16,7 @@ public:
     
     // Gửi GET request
     std::string get(std::string path);
+    
+    // Gửi DELETE request
+    std::string del(std::string path);
 };

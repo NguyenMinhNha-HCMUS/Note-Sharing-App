@@ -1,22 +1,137 @@
+
 #include "Crypto.h"
 #include <openssl/evp.h>
-#include <openssl/aes.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
-#include <openssl/hmac.h>
 #include <openssl/buffer.h>
 #include <openssl/bio.h>
 #include <openssl/ec.h>
-#include <openssl/bn.h>
-#include <openssl/obj_mac.h>
-#include <openssl/param_build.h>
-#include <openssl/core_names.h>
+#include <openssl/pem.h>
+#include <openssl/kdf.h>
+//#include <openssl/pkcs5.h> // For PBKDF2
 #include <iomanip>
 #include <sstream>
 #include <cstring>
 #include <iostream>
-#include <stdexcept>
+#include <algorithm>
+#include <cmath>
 
+// --- Helper Functions (Hex, Base64) ---
+
+std::string Crypto::toHex(const std::vector<unsigned char>& data) {
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+    for (const unsigned char byte : data) {
+        ss << std::setw(2) << (int)byte;
+    }
+    return ss.str();
+}
+
+std::vector<unsigned char> Crypto::fromHex(const std::string& hex) {
+    std::vector<unsigned char> bytes;
+    for (size_t i = 0; i < hex.length(); i += 2) {
+        std::string byteString = hex.substr(i, 2);
+        unsigned char byte = (unsigned char)strtol(byteString.c_str(), NULL, 16);
+        bytes.push_back(byte);
+    }
+    return bytes;
+}
+
+std::string Crypto::base64Encode(const std::vector<unsigned char>& data) {
+    BIO *bio, *b64;
+    BUF_MEM *bufferPtr;
+
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new(BIO_s_mem());
+    bio = BIO_push(b64, bio);
+
+    // Bỏ ký tự xuống dòng
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); 
+
+    if (BIO_write(bio, data.data(), data.size()) <= 0) {
+        BIO_free_all(bio);
+        return "";
+    }
+    BIO_flush(bio);
+    BIO_get_mem_ptr(bio, &bufferPtr);
+    
+    std::string encoded(bufferPtr->data, bufferPtr->length);
+    
+    BIO_free_all(bio);
+    return encoded;
+}
+
+std::vector<unsigned char> Crypto::base64Decode(const std::string& encoded) {
+    BIO *bio, *b64;
+    size_t len = encoded.length();
+    
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_mem_buf(encoded.data(), len);
+    bio = BIO_push(b64, bio);
+
+    // Bỏ ký tự xuống dòng
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); 
+
+    // Tính toán kích thước tối đa (3/4 * len)
+    size_t max_len = std::ceil(len / 4.0) * 3 + 1;
+    std::vector<unsigned char> decoded_data(max_len);
+    
+    int decode_len = BIO_read(bio, decoded_data.data(), decoded_data.size());
+
+    if (decode_len <= 0) {
+        BIO_free_all(bio);
+        return {};
+    }
+    
+    decoded_data.resize(decode_len);
+    BIO_free_all(bio);
+    return decoded_data;
+}
+
+
+// --- Utility Functions ---
+
+// Hàm tạo bytes ngẫu nhiên (dùng làm IV, FileKey, Salt, etc.)
+std::vector<unsigned char> Crypto::generateRandomBytes(int length) {
+    std::vector<unsigned char> buffer(length);
+    if (RAND_bytes(buffer.data(), length) != 1) {
+        std::cerr << "RAND_bytes failed\n";
+        return {};
+    }
+    return buffer;
+}
+
+// --- Key Derivation ---
+
+// Dùng PBKDF2-HMAC-SHA256 để tạo Master Key từ Mật khẩu và Salt
+std::vector<unsigned char> Crypto::deriveKeyPBKDF2(
+    const std::string& password, 
+    const std::string& salt
+) {
+    const int key_len = 32; // 32 bytes (256 bits) key size
+    const int iterations = 310000; // Số lần lặp được khuyến nghị
+
+    std::vector<unsigned char> key(key_len);
+    std::vector<unsigned char> salt_bytes = fromHex(salt);
+
+    if (PKCS5_PBKDF2_HMAC(
+        password.c_str(), password.length(),
+        salt_bytes.data(), salt_bytes.size(),
+        iterations, 
+        EVP_sha256(),
+        key_len,
+        key.data()
+    ) != 1) {
+        std::cerr << "PBKDF2 key derivation failed\n";
+        return {};
+    }
+
+    return key;
+}
+
+// --- AES-256-CBC Encryption/Decryption ---
+
+// Hàm băm SHA-256
 std::string Crypto::hashSHA256(const std::string& input) {
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256(reinterpret_cast<const unsigned char*>(input.c_str()), 
@@ -24,304 +139,282 @@ std::string Crypto::hashSHA256(const std::string& input) {
     return toHex(std::vector<unsigned char>(hash, hash + SHA256_DIGEST_LENGTH));
 }
 
-std::vector<unsigned char> Crypto::generateRandomBytes(int length) {
-    std::vector<unsigned char> buffer(length);
-    if (RAND_bytes(buffer.data(), length) != 1) {
-        std::cerr << "Error generating random bytes" << std::endl;
-        return std::vector<unsigned char>();
-    }
-    return buffer;
-}
-
-std::string Crypto::toHex(const std::vector<unsigned char>& data) {
-    std::stringstream ss;
-    ss << std::hex << std::setfill('0');
-    for (unsigned char byte : data) {
-        ss << std::setw(2) << static_cast<int>(byte);
-    }
-    return ss.str();
-}
-
-std::vector<unsigned char> Crypto::fromHex(const std::string& hex) {
-    std::vector<unsigned char> result;
-    if (hex.length() % 2 != 0) {
-        return result;
-    }
-    
-    for (size_t i = 0; i < hex.length(); i += 2) {
-        std::string byteStr = hex.substr(i, 2);
-        unsigned char byte = static_cast<unsigned char>(std::stoi(byteStr, nullptr, 16));
-        result.push_back(byte);
-    }
-    return result;
-}
-
-std::string Crypto::base64Encode(const std::vector<unsigned char>& data) {
-    BIO* bio = BIO_new(BIO_s_mem());
-    BIO* b64 = BIO_new(BIO_f_base64());
-    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-    bio = BIO_push(b64, bio);
-    
-    BIO_write(bio, data.data(), static_cast<int>(data.size()));
-    BIO_flush(bio);
-    
-    BUF_MEM* bufferPtr;
-    BIO_get_mem_ptr(bio, &bufferPtr);
-    
-    std::string result(bufferPtr->data, bufferPtr->length);
-    BIO_free_all(bio);
-    return result;
-}
-
-std::vector<unsigned char> Crypto::base64Decode(const std::string& encoded) {
-    BIO* bio = BIO_new_mem_buf(encoded.data(), static_cast<int>(encoded.size()));
-    BIO* b64 = BIO_new(BIO_f_base64());
-    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-    bio = BIO_push(b64, bio);
-    
-    std::vector<unsigned char> result(encoded.size());
-    int decodedLen = BIO_read(bio, result.data(), static_cast<int>(encoded.size()));
-    
-    BIO_free_all(bio);
-    
-    if (decodedLen > 0) {
-        result.resize(decodedLen);
-    } else {
-        result.clear();
-    }
-    return result;
-}
-
+// Hàm mã hóa AES-256-CBC
 std::vector<unsigned char> Crypto::encryptAES(
     const std::vector<unsigned char>& plaintext,
     const std::vector<unsigned char>& key,
     const std::vector<unsigned char>& iv
 ) {
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) {
-        return std::vector<unsigned char>();
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int ciphertext_len;
+    
+    size_t max_len = plaintext.size() + EVP_MAX_BLOCK_LENGTH; 
+    std::vector<unsigned char> ciphertext(max_len);
+
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        return {};
     }
-    
-    std::vector<unsigned char> ciphertext(plaintext.size() + AES_BLOCK_SIZE);
-    int len = 0;
-    int ciphertextLen = 0;
-    
-    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key.data(), iv.data()) != 1) {
+
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data())) {
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    
-    if (EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(), 
-                          static_cast<int>(plaintext.size())) != 1) {
+
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(), plaintext.size())) {
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    ciphertextLen = len;
-    
-    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len) != 1) {
+    ciphertext_len = len;
+
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len)) {
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    ciphertextLen += len;
-    
+    ciphertext_len += len;
+
     EVP_CIPHER_CTX_free(ctx);
-    ciphertext.resize(ciphertextLen);
+    ciphertext.resize(ciphertext_len);
     return ciphertext;
 }
 
+// Hàm giải mã AES-256-CBC
 std::vector<unsigned char> Crypto::decryptAES(
     const std::vector<unsigned char>& ciphertext,
     const std::vector<unsigned char>& key,
     const std::vector<unsigned char>& iv
 ) {
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) {
-        return std::vector<unsigned char>();
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int plaintext_len;
+    
+    size_t max_len = ciphertext.size(); 
+    std::vector<unsigned char> plaintext(max_len);
+
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        return {};
     }
-    
-    std::vector<unsigned char> plaintext(ciphertext.size());
-    int len = 0;
-    int plaintextLen = 0;
-    
-    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key.data(), iv.data()) != 1) {
+
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data())) {
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    
-    if (EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(),
-                          static_cast<int>(ciphertext.size())) != 1) {
+
+    if (1 != EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size())) {
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    plaintextLen = len;
-    
-    if (EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len) != 1) {
+    plaintext_len = len;
+
+    if (1 != EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len)) {
+        // Lỗi giải mã có thể do key/IV sai hoặc dữ liệu đã bị thay đổi
         EVP_CIPHER_CTX_free(ctx);
-        return std::vector<unsigned char>();
+        return {};
     }
-    plaintextLen += len;
-    
+    plaintext_len += len;
+
     EVP_CIPHER_CTX_free(ctx);
-    plaintext.resize(plaintextLen);
+    plaintext.resize(plaintext_len);
     return plaintext;
 }
 
-std::vector<unsigned char> Crypto::deriveKeyPBKDF2(
-    const std::string& password,
-    const std::string& salt
-) {
-    const int iterations = 10000;
-    const int keyLen = 32;
-    std::vector<unsigned char> key(keyLen);
-    
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), static_cast<int>(password.size()),
-                          reinterpret_cast<const unsigned char*>(salt.c_str()),
-                          static_cast<int>(salt.size()),
-                          iterations, EVP_sha256(), keyLen, key.data()) != 1) {
-        std::cerr << "PBKDF2 derivation failed" << std::endl;
-        return std::vector<unsigned char>();
-    }
-    return key;
-}
+// --- ECDH Key Exchange ---
 
+// Tạo cặp khóa ECDH (sử dụng P-256)
 DHKeyPair Crypto::generateECDHKeyPair() {
     DHKeyPair keyPair;
+    EC_KEY *eckey = NULL;
     
-    // Generate EC key pair using P-256 curve
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr);
-    if (!ctx) {
-        return keyPair;
-    }
+    // --- Khai báo biến ở đầu hàm để tránh lỗi 'jump to label crosses initialization' ---
+    const int curve_nid = NID_X9_62_prime256v1; // Khai báo hằng số
+    const BIGNUM *priv_bn = NULL;
+    size_t priv_size = 0;
+    std::vector<unsigned char> priv_bin;
+
+    const EC_GROUP *group = NULL;
+    const EC_POINT *pub_point = NULL;
+    size_t pub_size = 0;
+    std::vector<unsigned char> pub_bin;
+    // --- Kết thúc Khai báo biến ---
     
-    if (EVP_PKEY_keygen_init(ctx) <= 0) {
-        EVP_PKEY_CTX_free(ctx);
-        return keyPair;
-    }
+
+    eckey = EC_KEY_new_by_curve_name(curve_nid);
+    if (!eckey) goto cleanup;
+
+    if (1 != EC_KEY_generate_key(eckey)) goto cleanup;
+
+    // Lấy Private Key (Hex String)
+    priv_bn = EC_KEY_get0_private_key(eckey);
+    if (!priv_bn) goto cleanup;
+
+    priv_size = BN_num_bytes(priv_bn);
+    priv_bin.resize(priv_size);
+    if (priv_size != (size_t)BN_bn2bin(priv_bn, priv_bin.data())) goto cleanup;
+    keyPair.privateKey = toHex(priv_bin);
+
+    // Lấy Public Key (Hex String - UNCOMPRESSED)
+    group = EC_KEY_get0_group(eckey);
+    pub_point = EC_KEY_get0_public_key(eckey);
     
-    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, NID_X9_62_prime256v1) <= 0) {
-        EVP_PKEY_CTX_free(ctx);
-        return keyPair;
-    }
+    pub_size = EC_POINT_point2oct(group, pub_point, 
+                                             POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
     
-    EVP_PKEY* pkey = nullptr;
-    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
-        EVP_PKEY_CTX_free(ctx);
-        return keyPair;
-    }
-    EVP_PKEY_CTX_free(ctx);
+    pub_bin.resize(pub_size);
+    if (pub_size != EC_POINT_point2oct(group, pub_point, 
+                                       POINT_CONVERSION_UNCOMPRESSED, pub_bin.data(), pub_size, NULL)) goto cleanup;
+    keyPair.publicKey = toHex(pub_bin);
     
-    // Extract private key using OpenSSL 3.x API
-    BIGNUM* privBn = nullptr;
-    if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_PRIV_KEY, &privBn) == 1) {
-        keyPair.private_key.resize(32);
-        int privLen = BN_bn2binpad(privBn, keyPair.private_key.data(), 32);
-        if (privLen != 32) {
-            keyPair.private_key.clear();
+cleanup:
+    // Xóa khóa riêng tư và giải phóng EC_KEY
+    if (eckey) {
+        if (const BIGNUM *priv = EC_KEY_get0_private_key(eckey)) {
+            BN_zero(const_cast<BIGNUM*>(priv));
         }
-        BN_free(privBn);
+        EC_KEY_free(eckey);
     }
     
-    // Extract public key
-    size_t pubLen = 0;
-    if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0, &pubLen) == 1) {
-        keyPair.public_key.resize(pubLen);
-        EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY, 
-                                         keyPair.public_key.data(), pubLen, &pubLen);
+    if (keyPair.privateKey.empty() || keyPair.publicKey.empty()) {
+        keyPair.privateKey = "";
+        keyPair.publicKey = "";
     }
     
-    EVP_PKEY_free(pkey);
     return keyPair;
 }
 
+// Tính Shared Secret (Session Key)
 std::vector<unsigned char> Crypto::computeECDHSecret(
-    const std::string& my_private_key_hex,
-    const std::string& peer_public_key_hex
+        const std::string& myPrivateKeyHex,
+        const std::string& peerPublicKeyHex
 ) {
-    std::vector<unsigned char> privBytes = fromHex(my_private_key_hex);
-    std::vector<unsigned char> pubBytes = fromHex(peer_public_key_hex);
+    // --- Khai báo biến ở đầu hàm để tránh lỗi 'jump to label crosses initialization' ---
+    // Session Key sẽ là 32 bytes (256 bits)
+    std::vector<unsigned char> shared_secret(32); 
+    EC_KEY *eckey = NULL;
+    const EC_GROUP *group = NULL;
+    BIGNUM *priv_bn = NULL;
+    EC_POINT *pub_point = NULL;
+    const int curve_nid = NID_X9_62_prime256v1; // Move constant initialization up
     
-    if (privBytes.empty() || pubBytes.empty()) {
-        return std::vector<unsigned char>();
+    std::vector<unsigned char> priv_bin; // Khai báo vector
+    std::vector<unsigned char> pub_bin; // Khai báo vector
+    int shared_len = 0; // Khai báo và khởi tạo giá trị mặc định
+    // --- Kết thúc Khai báo biến ---
+
+    // Khóa riêng của tôi
+    priv_bin = fromHex(myPrivateKeyHex); // Chỉ là gán (assignment)
+    if (priv_bin.empty()) goto cleanup;
+    
+    priv_bn = BN_new();
+    if (NULL == BN_bin2bn(priv_bin.data(), priv_bin.size(), priv_bn)) goto cleanup; 
+
+    // Khóa công khai của đối phương (dạng EC_POINT)
+    pub_bin = fromHex(peerPublicKeyHex); // Chỉ là gán (assignment)
+    if (pub_bin.empty()) goto cleanup;
+
+    // Setup EC_KEY từ Private Key
+    eckey = EC_KEY_new_by_curve_name(curve_nid);
+    if (!eckey) goto cleanup;
+    group = EC_KEY_get0_group(eckey);
+    
+    if (1 != EC_KEY_set_private_key(eckey, priv_bn)) goto cleanup;
+    
+    pub_point = EC_POINT_new(group);
+    if (NULL == pub_point) goto cleanup;
+
+    if (1 != EC_POINT_oct2point(group, pub_point, pub_bin.data(), pub_bin.size(), NULL)) goto cleanup;
+
+    // Tính toán Shared Secret
+    shared_len = ECDH_compute_key(shared_secret.data(), shared_secret.size(), 
+                                      pub_point, eckey, NULL);
+
+    if (shared_len <= 0) {
+        shared_secret.clear();
+    } else {
+        shared_secret.resize(std::min((size_t)shared_len, (size_t)32));
+        if (shared_secret.size() < 32) {
+             // Thêm padding nếu cần (thường không xảy ra với P-256)
+             shared_secret.resize(32, 0); 
+        }
     }
     
-    // Build my key from private key bytes
-    OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
-    if (!bld) {
-        return std::vector<unsigned char>();
+cleanup:
+    // Xóa khóa riêng tư và các biến quan trọng khỏi bộ nhớ
+    if (priv_bn) BN_clear_free(priv_bn); 
+    if (pub_point) EC_POINT_free(pub_point);
+    if (eckey) {
+        if (const BIGNUM *priv = EC_KEY_get0_private_key(eckey)) {
+            BN_zero(const_cast<BIGNUM*>(priv));
+        }
+        EC_KEY_free(eckey);
     }
     
-    BIGNUM* privBn = BN_bin2bn(privBytes.data(), static_cast<int>(privBytes.size()), nullptr);
-    
-    OSSL_PARAM_BLD_push_utf8_string(bld, OSSL_PKEY_PARAM_GROUP_NAME, "prime256v1", 0);
-    OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PRIV_KEY, privBn);
-    
-    OSSL_PARAM* params = OSSL_PARAM_BLD_to_param(bld);
-    
-    EVP_PKEY_CTX* keyCtx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
-    EVP_PKEY_fromdata_init(keyCtx);
-    
-    EVP_PKEY* myKey = nullptr;
-    EVP_PKEY_fromdata(keyCtx, &myKey, EVP_PKEY_KEYPAIR, params);
-    
-    OSSL_PARAM_free(params);
-    OSSL_PARAM_BLD_free(bld);
-    BN_free(privBn);
-    EVP_PKEY_CTX_free(keyCtx);
-    
-    if (!myKey) {
-        return std::vector<unsigned char>();
-    }
-    
-    // Build peer key from public key bytes
-    OSSL_PARAM_BLD* peerBld = OSSL_PARAM_BLD_new();
-    OSSL_PARAM_BLD_push_utf8_string(peerBld, OSSL_PKEY_PARAM_GROUP_NAME, "prime256v1", 0);
-    OSSL_PARAM_BLD_push_octet_string(peerBld, OSSL_PKEY_PARAM_PUB_KEY, pubBytes.data(), pubBytes.size());
-    
-    OSSL_PARAM* peerParams = OSSL_PARAM_BLD_to_param(peerBld);
-    
-    EVP_PKEY_CTX* peerKeyCtx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
-    EVP_PKEY_fromdata_init(peerKeyCtx);
-    
-    EVP_PKEY* peerKey = nullptr;
-    EVP_PKEY_fromdata(peerKeyCtx, &peerKey, EVP_PKEY_PUBLIC_KEY, peerParams);
-    
-    OSSL_PARAM_free(peerParams);
-    OSSL_PARAM_BLD_free(peerBld);
-    EVP_PKEY_CTX_free(peerKeyCtx);
-    
-    if (!peerKey) {
-        EVP_PKEY_free(myKey);
-        return std::vector<unsigned char>();
-    }
-    
-    // Derive shared secret
-    EVP_PKEY_CTX* deriveCtx = EVP_PKEY_CTX_new(myKey, nullptr);
-    if (!deriveCtx || EVP_PKEY_derive_init(deriveCtx) <= 0) {
-        EVP_PKEY_free(myKey);
-        EVP_PKEY_free(peerKey);
-        if (deriveCtx) EVP_PKEY_CTX_free(deriveCtx);
-        return std::vector<unsigned char>();
-    }
-    
-    if (EVP_PKEY_derive_set_peer(deriveCtx, peerKey) <= 0) {
-        EVP_PKEY_CTX_free(deriveCtx);
-        EVP_PKEY_free(myKey);
-        EVP_PKEY_free(peerKey);
-        return std::vector<unsigned char>();
-    }
-    
-    size_t secretLen = 0;
-    EVP_PKEY_derive(deriveCtx, nullptr, &secretLen);
-    
-    std::vector<unsigned char> secret(secretLen);
-    EVP_PKEY_derive(deriveCtx, secret.data(), &secretLen);
-    
-    EVP_PKEY_CTX_free(deriveCtx);
-    EVP_PKEY_free(myKey);
-    EVP_PKEY_free(peerKey);
-    
-    // Hash the shared secret to get a 32-byte key
-    std::string secretHex = toHex(secret);
-    std::string hashedSecret = hashSHA256(secretHex);
-    return fromHex(hashedSecret);
+    return shared_secret;
 }
+
+// --- Key Wrapping/Unwrapping (Dùng AES-256-CBC) ---
+
+// Key Wrapping: Mã hóa KeyA bằng KeyB (dùng cho MasterKey -> FileKey hoặc SessionKey -> FileKey)
+std::string Crypto::wrapKey(
+    const std::vector<unsigned char>& keyToWrap, 
+    const std::vector<unsigned char>& wrappingKey
+) {
+    if (wrappingKey.size() != 32) {
+        std::cerr << "Error: WrappingKey must be 32 bytes for AES-256.\n";
+        return "";
+    }
+    if (keyToWrap.size() != 32) { 
+        std::cerr << "Error: KeyToWrap must be 32 bytes.\n";
+        return "";
+    }
+
+    // 1. Tạo IV ngẫu nhiên
+    std::vector<unsigned char> iv = generateRandomBytes(16);
+    if (iv.empty()) return "";
+
+    // 2. Mã hóa keyToWrap bằng wrappingKey (sử dụng AES-256-CBC)
+    std::vector<unsigned char> encryptedKey = encryptAES(keyToWrap, wrappingKey, iv);
+    
+    // Xóa keyToWrap khỏi RAM ngay lập tức
+    // Lưu ý: const_cast có thể bị coi là không an toàn nhưng cần thiết để xóa key
+    std::fill(const_cast<unsigned char*>(keyToWrap.data()), const_cast<unsigned char*>(keyToWrap.data()) + keyToWrap.size(), 0);
+
+    if (encryptedKey.empty()) return "";
+
+    // 3. Kết hợp IV (16 bytes) và Key đã mã hóa
+    std::vector<unsigned char> wrappedData;
+    wrappedData.insert(wrappedData.end(), iv.begin(), iv.end());
+    wrappedData.insert(wrappedData.end(), encryptedKey.begin(), encryptedKey.end());
+    
+    // 4. Base64 encode 
+    return base64Encode(wrappedData);
+}
+
+// Key Unwrapping: Giải mã KeyA bằng KeyB
+std::vector<unsigned char> Crypto::unwrapKey(
+    const std::string& wrappedKey, 
+    const std::vector<unsigned char>& unwrappingKey
+) {
+    if (wrappedKey.empty()) return {};
+    if (unwrappingKey.size() != 32) return {};
+
+    // 1. Base64 decode
+    std::vector<unsigned char> wrappedData = base64Decode(wrappedKey);
+    
+    if (wrappedData.size() < 16 + 16) return {};
+
+    // 2. Tách IV và Key đã mã hóa
+    std::vector<unsigned char> iv(wrappedData.begin(), wrappedData.begin() + 16);
+    std::vector<unsigned char> encryptedKey(wrappedData.begin() + 16, wrappedData.end());
+
+    // 3. Giải mã Key đã mã hóa
+    std::vector<unsigned char> unwrappedKey = decryptAES(encryptedKey, unwrappingKey, iv);
+
+    // 4. Kiểm tra kích thước Key (phải là 32 bytes)
+    if (!unwrappedKey.empty() && unwrappedKey.size() != 32) {
+         std::fill(unwrappedKey.begin(), unwrappedKey.end(), 0);
+         return {};
+    }
+    
+    return unwrappedKey;
+}
+

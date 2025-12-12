@@ -29,6 +29,9 @@ public:
 
     // List: Liệt kê tất cả ghi chú của user hiện tại
     void listNotes();
+    
+    // List My Shares: Liệt kê các ghi chú đã chia sẻ với người khác
+    void listMyShares();
 
     // Delete: Xóa ghi chú theo ID
     void deleteNote(int note_id);
@@ -71,3 +74,6 @@ public:
     // 4. Giải mã nội dung bằng file_key
     void receiveSharedNote(int share_id);
 };
+
+
+

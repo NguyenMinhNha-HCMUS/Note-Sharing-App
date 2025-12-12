@@ -33,7 +33,7 @@ public:
 
     // --- Note Operations ---
     // Trả về note_id vừa tạo
-    int saveNote(int user_id, std::string encrypted_content, std::string wrapped_key, std::string iv_hex);
+    int saveNote(int user_id, std::string encrypted_content, std::string wrapped_key, std::string iv_hex, std::string filename);
     NoteData getNoteById(int note_id);
     
     // --- Sharing Operations ---
@@ -53,6 +53,7 @@ public:
         std::string send_public_key_hex;
         std::string wrapped_key;
         std::string iv_hex;
+        std::string filename;
         bool valid;
     };
     ShareLinkData getShareLinkData(std::string token, std::string username);
@@ -79,4 +80,13 @@ public:
     std::vector<NoteData> getNotesForUser(int user_id);
     // Xóa ghi chú
     bool deleteNote(int note_id, int user_id);
+    
+    // Lấy danh sách share links do user tạo (outgoing shares)
+    struct OutgoingShare {
+        int note_id;
+        std::string token;
+        long expiration_time;
+        std::vector<std::string> shared_with; // Danh sách usernames được chia sẻ
+    };
+    std::vector<OutgoingShare> getOutgoingShares(int user_id);
 };

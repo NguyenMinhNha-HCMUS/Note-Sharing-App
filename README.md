@@ -1,120 +1,369 @@
-# Secure Note App
+# Secure Note Sharing Application
 
-A secure, end-to-end encrypted note sharing application with end-to-end encryption.
+Ứng dụng chia sẻ ghi chú an toàn với mã hóa end-to-end (E2EE) sử dụng ECDH và AES-256-CBC.
 
-## Features
+## ✨ Tính năng chính
 
-- User registration and authentication
-- End-to-end encryption using AES-256
-- Secure file sharing
-- Password hashing with SHA-256
-- REST API server with Crow framework
+- 🔐 **End-to-End Encryption**: Mã hóa hoàn toàn từ người gửi đến người nhận
+- 🔑 **ECDH Key Exchange**: Trao đổi khóa an toàn với secp256k1
+- 📝 **Quản lý Note**: Tạo, xem, xóa ghi chú được mã hóa
+- 🔗 **Chia sẻ linh hoạt**: Share link hoặc trực tiếp cho user
+- 📁 **Hỗ trợ file**: Upload/download bất kỳ loại file nào với tên file gốc
+- ⏰ **Thời gian hết hạn**: Tự động hết hạn link/share sau thời gian định trước
+- 🧪 **Test Suite**: Bộ test tự động bằng C++ với 17+ test cases
+- 🔒 **JWT Authentication**: Xác thực token với TTL cấu hình được
 
-## Installation Guide
+## 📋 Yêu cầu hệ thống
 
-### Prerequisites
+### Cài đặt môi trường (Windows)
 
-You need these installed **BEFORE** running the setup:
+#### 1. **C++ Compiler - GCC 14.2.0 trở lên**
 
-#### 1. C++ Compiler (MinGW/g++)
+**Khuyến nghị: MSYS2** (bao gồm g++, OpenSSL, và các thư viện cần thiết)
 
-Choose one of these options:
-
-**Option A: MSYS2 (Recommended)**
 ```powershell
+# Cài MSYS2
 winget install MSYS2.MSYS2
 ```
-After installation, open MSYS2 terminal and run:
+
+Sau khi cài xong, mở **MSYS2 UCRT64** terminal và chạy:
 ```bash
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openssl
-```
-Then add to PATH: `C:\msys64\mingw64\bin`
+# Cập nhật package database
+pacman -Syu
 
-**Option B: Git for Windows (includes MinGW)**
-```powershell
-winget install Git.Git
+# Cài compiler và OpenSSL
+pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-openssl
 ```
 
-#### 2. OpenSSL
-
-Required for encryption. Choose one:
-
-**Option A: Standalone OpenSSL**
+**Thêm vào PATH** (quan trọng!):
 ```powershell
-winget install ShiningLight.OpenSSL.Dev
+# PowerShell - thêm tạm thời
+$env:PATH = "D:\msys64\ucrt64\bin;$env:PATH"
+
+# Hoặc thêm vĩnh viễn qua System Properties > Environment Variables
+# Thêm: D:\msys64\ucrt64\bin  (điều chỉnh đường dẫn nếu cài ở chỗ khác)
 ```
 
-**Option B: Already included if you installed:**
-- Git for Windows
-- MSYS2 (with the openssl package above)
+#### 2. **Kiểm tra cài đặt**
 
-#### 3. Verify Installation
 ```powershell
-g++ --version      # Should show GCC version
+# Kiểm tra g++ (cần >= 14.2.0 để hỗ trợ C++17 đầy đủ)
+g++ --version
+
+# Kiểm tra OpenSSL
+openssl version
 ```
 
-### Build and Run
-
-```powershell
-.\install_and_build.bat
+Kết quả mong đợi:
 ```
-This will:
-1. Download dependencies (SQLite, JSON, httplib, Crow)
-2. Auto-detect OpenSSL location
-3. Build server and client
-
-#### Run Applications
-```powershell
-# Terminal 1 - Run Server
-.\server_app.exe
-
-# Terminal 2 - Run Client
-.\client_app.exe
+g++ (Rev2, Built by MSYS2 project) 14.2.0
+OpenSSL 3.x.x
 ```
 
 ---
 
-## Troubleshooting
+## 🚀 Cách chạy chương trình
 
-### "OpenSSL headers not found"
+### Bước 1: Build (Biên dịch)
 
-The build script auto-detects OpenSSL in common locations:
-- `C:\Program Files\OpenSSL-Win64`
-- `C:\Program Files\Git\mingw64`
-- `C:\msys64\mingw64`
-
-If you installed OpenSSL elsewhere, either:
-1. Add it to your system PATH
-2. Create a symbolic link to a standard location
-3. Manually edit `scripts/build.ps1` to add your path
-
-### VS Code IntelliSense Errors (Red Squiggles)
-
-The red squiggles for OpenSSL includes are just IntelliSense warnings. **The code will still compile correctly.**
-
-The `.vscode/c_cpp_properties.json` file lists multiple possible OpenSSL locations. IntelliSense will use the first one it finds.
-
-**To fix completely:**
-1. Open `.vscode/c_cpp_properties.json`
-2. Keep only the path where YOUR OpenSSL is installed
-3. Remove the other paths that don't exist on your system
-
-### "g++ not found"
-
-Make sure MinGW's bin directory is in your PATH:
+**Cách nhanh nhất - Build tất cả bằng 1 lệnh:**
 ```powershell
-# Check current PATH
-$env:PATH
-
-# Add MinGW to PATH (example for MSYS2)
-$env:PATH += ";C:\msys64\mingw64\bin"
-
-# To make permanent, add via System Properties > Environment Variables
+.\build_all.ps1
 ```
 
-## Development Notes
+**Hoặc build lại từ đầu:**
+```powershell
+.\build_all.ps1 -Clean
+```
 
-- The project uses standard C++17
-- OpenSSL 3.x is supported
-- Dependencies are automatically managed via scripts
-- Cross-platform compatible (Windows focus, but adaptable)
+Script này sẽ tự động:
+- ✅ Biên dịch server (server_app.exe)
+- ✅ Biên dịch client (client_app.exe)
+- ✅ Hiển thị tiến trình từng bước
+- ✅ Báo lỗi chi tiết nếu có
+
+### Bước 2: Chạy ứng dụng
+
+**Mở 2 terminal riêng biệt:**
+
+**Terminal 1 - Chạy Server:**
+```powershell
+.\server_app.exe
+```
+Server sẽ lắng nghe trên `http://localhost:8080`
+
+**Terminal 2 - Chạy Client:**
+```powershell
+.\client_app.exe
+```
+
+### Bước 3: Sử dụng
+
+1. **Đăng ký tài khoản** (chọn option 1)
+2. **Đăng nhập** (chọn option 2)
+3. Sử dụng các chức năng:
+   - Tạo note mới
+   - Xem danh sách notes
+   - Share note (qua link hoặc trực tiếp)
+   - Xem notes được share cho mình
+   - Download note dưới dạng file
+   - Xem danh sách notes đã share cho người khác
+
+---
+
+## 🧪 Chạy Test Suite
+
+### Build test:
+```powershell
+g++ test/auto_test.cpp -o auto_test.exe -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00 -lws2_32 -lwsock32 -lcrypt32
+```
+
+### Chạy test (cần server đang chạy):
+```powershell
+# Chạy với TTL mặc định (60 giây)
+.\auto_test.exe
+
+# Chạy với TTL tùy chỉnh
+.\auto_test.exe --token-ttl=30
+
+# Hoặc dùng environment variable
+$env:TEST_TOKEN_TTL = "30"
+.\auto_test.exe
+```
+
+### Hoặc dùng script tự động:
+```powershell
+.\test\build_and_run.ps1
+```
+Script này sẽ tự động khởi động server, reset database, và chạy test.
+
+**Xem hướng dẫn test chi tiết:** [test/README.md](test/README.md)
+
+---
+
+## 📖 Tài liệu chi tiết
+
+- **[HUONG_DAN_SU_DUNG.md](HUONG_DAN_SU_DUNG.md)** - Hướng dẫn sử dụng đầy đủ
+- **[Project explain.md](Project%20explain.md)** - Giải thích kiến trúc và cơ chế mã hóa
+- **[test/README.md](test/README.md)** - Hướng dẫn test và 40 test cases thủ công
+- **[test/TOKEN_TTL_GUIDE.md](test/TOKEN_TTL_GUIDE.md)** - Cấu hình token TTL cho testing
+
+---
+
+## ⚙️ Cấu hình nâng cao
+
+### Thay đổi Token TTL
+
+**Server:**
+```powershell
+# Set token timeout (giây)
+$env:SERVER_TOKEN_TTL = "3600"  # 1 giờ
+.\server_app.exe
+```
+
+**Test Client:**
+```powershell
+# Dùng environment variable
+$env:TEST_TOKEN_TTL = "30"
+.\auto_test.exe
+
+# Hoặc command line argument
+.\auto_test.exe --token-ttl=30
+```
+
+### Reset Database
+```powershell
+# Xóa database để bắt đầu lại
+Remove-Item server_data.db -Force
+```
+
+---
+
+## 🏗️ Cấu trúc Project
+
+```
+Project/
+├── server/              # Server code
+│   ├── server_main.cpp  # API endpoints (14 APIs)
+│   ├── Auth.cpp         # JWT authentication
+│   └── Database.cpp     # SQLite operations
+├── client/              # Client code
+│   ├── client_app_logic.cpp
+│   └── network.cpp      # HTTP client
+├── common/
+│   ├── Crypto.cpp       # ECDH, AES-256-CBC, PBKDF2
+│   └── Protocol.h       # Shared data structures
+├── test/                # Test suite
+│   ├── auto_test.cpp    # 17+ automated tests
+│   ├── build_and_run.ps1
+│   └── *.md             # 40 manual test cases
+├── vendor/              # Dependencies
+│   ├── crow_all.h       # HTTP server framework
+│   ├── httplib.h        # HTTP client library
+│   ├── json.hpp         # JSON parser
+│   └── sqlite3.*        # Database
+├── build_all.ps1        # Build script chính
+└── README.md            # File này
+```
+
+---
+
+## 🔧 Công nghệ sử dụng
+
+| Thành phần | Công nghệ |
+|------------|-----------|
+| **Language** | C++17 |
+| **Compiler** | GCC 14.2.0 (MSYS2) |
+| **Server Framework** | Crow (header-only) |
+| **HTTP Client** | cpp-httplib |
+| **Database** | SQLite3 |
+| **JSON** | nlohmann/json |
+| **Encryption** | OpenSSL 3.x |
+| **Key Exchange** | ECDH (secp256k1) |
+| **Symmetric Encryption** | AES-256-CBC |
+| **Key Derivation** | PBKDF2-SHA256 (10k iterations) |
+| **Authentication** | JWT with configurable TTL |
+
+---
+
+## ❓ Xử lý lỗi thường gặp
+
+### Lỗi: "g++ not found" hoặc "command not found"
+
+**Nguyên nhân:** Chưa thêm g++ vào PATH
+
+**Giải pháp:**
+```powershell
+# Kiểm tra PATH hiện tại
+$env:PATH
+
+# Thêm tạm thời (session hiện tại)
+$env:PATH = "D:\msys64\ucrt64\bin;$env:PATH"
+
+# Hoặc thêm vĩnh viễn:
+# 1. Windows Search > "Environment Variables"
+# 2. System Properties > Environment Variables
+# 3. Thêm: D:\msys64\ucrt64\bin vào PATH
+```
+
+### Lỗi: "OpenSSL headers not found"
+
+**Nguyên nhân:** Chưa cài OpenSSL hoặc chưa có trong PATH
+
+**Giải pháp:**
+```bash
+# Cài OpenSSL qua MSYS2
+pacman -S mingw-w64-ucrt-x86_64-openssl
+
+# Kiểm tra
+openssl version
+```
+
+### Lỗi: "cannot find -lcrypto" hoặc "-lssl"
+
+**Nguyên nhân:** Thiếu OpenSSL libraries
+
+**Giải pháp:** Cài lại OpenSSL hoặc kiểm tra PATH đúng folder (ucrt64/bin)
+
+### Lỗi Build: "undefined reference to..."
+
+**Nguyên nhân:** Thiếu library khi linking
+
+**Giải pháp:** Đảm bảo lệnh build có đủ các flags:
+- `-lws2_32 -lwsock32` (Windows sockets)
+- `-lcrypto -lssl` (OpenSSL)
+- `-lcrypt32` (Windows crypto - cho client)
+
+### Server không start được
+
+```powershell
+# Kiểm tra port 8080 có bị chiếm không
+netstat -ano | findstr :8080
+
+# Nếu có process đang dùng, kill nó:
+Stop-Process -Id <PID> -Force
+```
+
+### Client không kết nối được server
+
+1. Đảm bảo server đã chạy và hiển thị "Server running on port 8080"
+2. Kiểm tra firewall không block port 8080
+3. Thử truy cập: http://localhost:8080 trên browser
+
+### IntelliSense báo lỗi (red squiggles) nhưng vẫn compile được
+
+**Đây chỉ là warning của VS Code IntelliSense**, code vẫn chạy bình thường.
+
+**Để fix hoàn toàn:**
+1. Mở `.vscode/c_cpp_properties.json`
+2. Chỉnh `includePath` đúng với thư mục OpenSSL của bạn
+3. Xóa các path không tồn tại
+
+---
+
+## 📚 API Endpoints (14 APIs)
+
+| Method | Endpoint | Mô tả | Auth |
+|--------|----------|-------|------|
+| POST | `/register` | Đăng ký user mới | ❌ |
+| POST | `/login` | Đăng nhập | ❌ |
+| POST | `/create_note` | Tạo note mới | ✅ |
+| GET | `/my_notes` | Xem notes của mình | ✅ |
+| DELETE | `/delete_note/:id` | Xóa note | ✅ |
+| GET | `/note/:id` | Xem note theo ID | ✅ |
+| POST | `/share_note` | Share note cho user | ✅ |
+| GET | `/shared_with_me` | Notes được share cho mình | ✅ |
+| POST | `/create_shared_link` | Tạo share link | ✅ |
+| GET | `/link/:token` | Truy cập note qua link | ❌ |
+| POST | `/download_note` | Download note dưới dạng file | ✅ |
+| GET | `/download_link/:token` | Download qua link | ❌ |
+| GET | `/shared_links` | Danh sách link đã tạo | ✅ |
+| GET | `/myshares` | Notes đã share cho người khác | ✅ |
+
+---
+
+## 👨‍💻 Development
+
+### Build từng thành phần riêng lẻ
+
+**Server:**
+```powershell
+gcc -c vendor/sqlite3.c -o sqlite3.o
+g++ -c server/server_main.cpp -o server_main.o -std=c++17 -I vendor/asio_lib -I vendor
+g++ -c server/Auth.cpp -o Auth.o -std=c++17 -I vendor
+g++ -c server/Database.cpp -o Database.o -std=c++17 -I vendor
+g++ -c common/Crypto.cpp -o Crypto.o -std=c++17 -I vendor
+g++ server_main.o Auth.o Database.o Crypto.o sqlite3.o -o server_app.exe -lws2_32 -lwsock32 -lcrypto -lssl
+```
+
+**Client:**
+```powershell
+g++ -c client_main.cpp -o client_main.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
+g++ -c client/client_app_logic.cpp -o client_app_logic.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
+g++ -c client/network.cpp -o network.o -std=c++17 -I vendor -D_WIN32_WINNT=0x0A00
+g++ client_main.o client_app_logic.o network.o Crypto.o -o client_app.exe -lws2_32 -lwsock32 -lcrypto -lssl -lcrypt32
+```
+
+### Debug mode (xem warnings chi tiết)
+
+```powershell
+# Xóa '2>$null' trong build_all.ps1 để xem output đầy đủ
+# Hoặc build thủ công với output
+g++ -c server/Auth.cpp -o Auth.o -std=c++17 -I vendor
+```
+
+---
+
+## 📝 License
+
+Educational project for Cryptography Lab 02.
+
+---
+
+## 🤝 Credits
+
+- **Crow Framework** - HTTP server
+- **cpp-httplib** - HTTP client
+- **nlohmann/json** - JSON parsing
+- **OpenSSL** - Cryptographic operations
+- **SQLite** - Database engine

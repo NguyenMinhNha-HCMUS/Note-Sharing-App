@@ -2,10 +2,23 @@
 #include "../common/Crypto.h"
 #include <sstream>
 #include <ctime>
+#include <cstdlib>
 
 // Server secret key for signing tokens (in production, load from env or config)
 static const std::string SERVER_SECRET = "SecureNoteApp_ServerSecret_2024";
-static const long long TOKEN_TTL_SECONDS = 3600; // 1 hour expiry
+
+// Token TTL - can be overridden by SERVER_TOKEN_TTL environment variable
+static long long getTokenTTL() {
+    const char* envTTL = std::getenv("SERVER_TOKEN_TTL");
+    if (envTTL) {
+        try {
+            return std::stoll(envTTL);
+        } catch (...) {}
+    }
+    return 60; // Default: 60 seconds for testing
+}
+
+static const long long TOKEN_TTL_SECONDS = getTokenTTL();
 
 std::string Auth::generateToken(int user_id, std::string username) {
     // Token format: base64(user_id:username:exp).signature

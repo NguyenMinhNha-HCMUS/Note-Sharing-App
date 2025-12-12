@@ -31,6 +31,7 @@ bool Database::init() {
             encrypted_content TEXT NOT NULL,
             wrapped_key TEXT NOT NULL,
             iv_hex TEXT NOT NULL,
+            filename TEXT NOT NULL DEFAULT 'note.txt',
             created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES Users(id)
         );
@@ -178,8 +179,8 @@ bool Database::updateUserPublicKey(int user_id, std::string receive_pub_key) {
 }
 
 int Database::saveNote(int user_id, std::string encrypted_content, 
-                       std::string wrapped_key, std::string iv_hex) {
-    const char* sql = "INSERT INTO Notes (user_id, encrypted_content, wrapped_key, iv_hex, created_at) VALUES (?, ?, ?, ?, ?)";
+                       std::string wrapped_key, std::string iv_hex, std::string filename) {
+    const char* sql = "INSERT INTO Notes (user_id, encrypted_content, wrapped_key, iv_hex, filename, created_at) VALUES (?, ?, ?, ?, ?, ?)";
     
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -193,7 +194,8 @@ int Database::saveNote(int user_id, std::string encrypted_content,
     sqlite3_bind_text(stmt, 2, encrypted_content.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, wrapped_key.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, iv_hex.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 5, now);
+    sqlite3_bind_text(stmt, 5, filename.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 6, now);
     
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -209,7 +211,7 @@ NoteData Database::getNoteById(int note_id) {
     NoteData note;
     note.note_id = -1;
     
-    const char* sql = "SELECT id, user_id, encrypted_content, wrapped_key, iv_hex, created_at FROM Notes WHERE id = ?";
+    const char* sql = "SELECT id, user_id, encrypted_content, wrapped_key, iv_hex, filename, created_at FROM Notes WHERE id = ?";
     
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -223,7 +225,8 @@ NoteData Database::getNoteById(int note_id) {
         note.encrypted_content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         note.wrapped_key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         note.iv_hex = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        note.created_at = sqlite3_column_int64(stmt, 5);
+        note.filename = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        note.created_at = sqlite3_column_int64(stmt, 6);
     }
     
     sqlite3_finalize(stmt);
@@ -233,7 +236,7 @@ NoteData Database::getNoteById(int note_id) {
 std::vector<NoteData> Database::getNotesForUser(int user_id) {
     std::vector<NoteData> notes;
     
-    const char* sql = "SELECT id, encrypted_content, wrapped_key, iv_hex, created_at FROM Notes WHERE user_id = ? ORDER BY created_at DESC";
+    const char* sql = "SELECT id, encrypted_content, wrapped_key, iv_hex, filename, created_at FROM Notes WHERE user_id = ? ORDER BY created_at DESC";
     
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -248,7 +251,8 @@ std::vector<NoteData> Database::getNotesForUser(int user_id) {
         note.encrypted_content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         note.wrapped_key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         note.iv_hex = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        note.created_at = sqlite3_column_int64(stmt, 4);
+        note.filename = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        note.created_at = sqlite3_column_int64(stmt, 5);
         notes.push_back(note);
     }
     
@@ -324,6 +328,49 @@ bool Database::deleteNote(int note_id, int user_id) {
     return rc == SQLITE_DONE;
 }
 
+std::vector<Database::OutgoingShare> Database::getOutgoingShares(int user_id) {
+    std::vector<OutgoingShare> shares;
+    
+    const char* sql = R"(
+        SELECT sl.note_id, sl.token, sl.expiration_time, sl.id
+        FROM SharedLinks sl
+        WHERE sl.owner_id = ?
+        ORDER BY sl.expiration_time DESC
+    )";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return shares;
+    }
+    
+    sqlite3_bind_int(stmt, 1, user_id);
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        OutgoingShare share;
+        share.note_id = sqlite3_column_int(stmt, 0);
+        share.token = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        share.expiration_time = sqlite3_column_int64(stmt, 2);
+        int link_id = sqlite3_column_int(stmt, 3);
+        
+        // Get usernames who have access to this link
+        const char* userSql = "SELECT username FROM SharedLinkAccess WHERE link_id = ?";
+        sqlite3_stmt* userStmt;
+        if (sqlite3_prepare_v2(db, userSql, -1, &userStmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(userStmt, 1, link_id);
+            while (sqlite3_step(userStmt) == SQLITE_ROW) {
+                std::string username = reinterpret_cast<const char*>(sqlite3_column_text(userStmt, 0));
+                share.shared_with.push_back(username);
+            }
+            sqlite3_finalize(userStmt);
+        }
+        
+        shares.push_back(share);
+    }
+    
+    sqlite3_finalize(stmt);
+    return shares;
+}
+
 std::string Database::createShareLink(int note_id, int user_id,
                                       std::vector<UserAccessEntry> user_access_list,
                                       int duration_seconds) {
@@ -374,7 +421,7 @@ std::string Database::createShareLink(int note_id, int user_id,
 }
 
 Database::ShareLinkData Database::getShareLinkData(std::string token, std::string username) {
-    ShareLinkData result{-1, "", "", "", "", false};
+    ShareLinkData result{-1, "", "", "", "", "", false};
     
     long now = static_cast<long>(std::time(nullptr));
     
@@ -438,6 +485,7 @@ Database::ShareLinkData Database::getShareLinkData(std::string token, std::strin
     result.note_id = noteId;
     result.encrypted_content = note.encrypted_content;
     result.iv_hex = note.iv_hex;
+    result.filename = note.filename;
     result.valid = true;
     
     return result;

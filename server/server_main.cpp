@@ -1,5 +1,5 @@
-#include "../vendor/crow_all.h"
 #include "../vendor/json.hpp"
+#include "../vendor/crow_all.h"
 #include "Database.h"
 #include "Auth.h"
 #include "../common/Protocol.h"
@@ -30,19 +30,19 @@ int main() {
             "GET /notes - List user's notes (auth required)",
             "GET /note/<id> - Get note by ID (auth required)",
             "DELETE /note/<id> - Delete note (auth required)",
-            "POST /share - Share note with user (auth required)",
             "POST /share/link - Create share link (auth required)",
             "GET /share/<token> - Access note via share link (auth required)",
             "DELETE /share/<token> - Revoke share link (auth required)",
             "GET /shared - List notes shared with user (auth required)",
             "GET /shared/<id> - Get shared note data (auth required)",
-            "GET /user/<username>/pubkey - Get user's public key"
+            "GET /user/<username>/pubkey - Get user's public key",
+            "GET /myshares - List notes current user has shared with others (auth required)"
         });
         return crow::response(200, info.dump());
     });
 
     // API 1: Register new user
-    CROW_ROUTE(app, "/register").methods(crow::HTTPMethod::POST)
+    CROW_ROUTE(app, "/register").methods(crow::HTTPMethod::Post)
     ([&db](const crow::request& req) {
         try {
             auto body = json::parse(req.body);
@@ -83,7 +83,7 @@ int main() {
     });
 
     // API 2: Login
-    CROW_ROUTE(app, "/login").methods(crow::HTTPMethod::POST)
+    CROW_ROUTE(app, "/login").methods(crow::HTTPMethod::Post)
     ([&db](const crow::request& req) {
         try {
             auto body = json::parse(req.body);
@@ -117,7 +117,7 @@ int main() {
     });
 
     // API 3: Upload note (requires auth)
-    CROW_ROUTE(app, "/upload").methods(crow::HTTPMethod::POST)
+    CROW_ROUTE(app, "/upload").methods(crow::HTTPMethod::Post)
     ([&db](const crow::request& req) {
         // Verify token
         std::string authHeader = req.get_header_value("Authorization");
@@ -134,8 +134,9 @@ int main() {
             std::string encryptedContent = body["encrypted_content"].get<std::string>();
             std::string wrappedKey = body["wrapped_key"].get<std::string>();
             std::string ivHex = body["iv_hex"].get<std::string>();
+            std::string filename = body.value("filename", "note.txt"); // Default to note.txt if not provided
             
-            int noteId = db.saveNote(auth.user_id, encryptedContent, wrappedKey, ivHex);
+            int noteId = db.saveNote(auth.user_id, encryptedContent, wrappedKey, ivHex, filename);
             if (noteId == -1) {
                 return crow::response(500, R"({"error": "Failed to save note"})");
             }
@@ -151,7 +152,7 @@ int main() {
     });
 
     // API 4: Get user's public key (for sharing)
-    CROW_ROUTE(app, "/user/<string>/pubkey").methods(crow::HTTPMethod::GET)
+    CROW_ROUTE(app, "/user/<string>/pubkey").methods(crow::HTTPMethod::Get)
     ([&db](std::string username) {
         UserRecord user = db.getUserByUsername(username);
         if (user.id == -1) {
@@ -165,7 +166,7 @@ int main() {
     });
 
     // API 5: List user's notes
-    CROW_ROUTE(app, "/notes").methods(crow::HTTPMethod::GET)
+    CROW_ROUTE(app, "/notes").methods(crow::HTTPMethod::Get)
     ([&db](const crow::request& req) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -189,7 +190,7 @@ int main() {
     });
 
     // API 6: Get note by ID
-    CROW_ROUTE(app, "/note/<int>").methods(crow::HTTPMethod::GET)
+    CROW_ROUTE(app, "/note/<int>").methods(crow::HTTPMethod::Get)
     ([&db](const crow::request& req, int note_id) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -223,12 +224,13 @@ int main() {
         response["encrypted_content"] = note.encrypted_content;
         response["wrapped_key"] = note.wrapped_key;
         response["iv_hex"] = note.iv_hex;
+        response["filename"] = note.filename;
         response["created_at"] = note.created_at;
         return crow::response(200, response.dump());
     });
 
     // API 7: Delete note
-    CROW_ROUTE(app, "/note/<int>").methods(crow::HTTPMethod::DELETE)
+    CROW_ROUTE(app, "/note/<int>").methods(crow::HTTPMethod::Delete)
     ([&db](const crow::request& req, int note_id) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -248,49 +250,8 @@ int main() {
         return crow::response(200, response.dump());
     });
 
-    // API 8: Share note with another user (user-to-user)
-    CROW_ROUTE(app, "/share").methods(crow::HTTPMethod::POST)
-    ([&db](const crow::request& req) {
-        std::string authHeader = req.get_header_value("Authorization");
-        std::string tokenStr = Auth::extractToken(authHeader);
-        TokenPayload auth = Auth::verifyToken(tokenStr);
-        
-        if (!auth.valid) {
-            return crow::response(401, R"({"error": "Unauthorized"})");
-        }
-        
-        try {
-            auto body = json::parse(req.body);
-            
-            int noteId = body["note_id"].get<int>();
-            std::string recipientUsername = body["recipient_username"].get<std::string>();
-            std::string sendPubKey = body["send_public_key_hex"].get<std::string>();
-            std::string newWrappedKey = body["new_wrapped_key"].get<std::string>();
-            int duration = body["duration_seconds"].get<int>();
-            
-            // Get recipient user
-            UserRecord recipient = db.getUserByUsername(recipientUsername);
-            if (recipient.id == -1) {
-                return crow::response(404, R"({"error": "Recipient not found"})");
-            }
-            
-            if (!db.createUserShare(noteId, auth.user_id, recipient.id, 
-                                    sendPubKey, newWrappedKey, duration)) {
-                return crow::response(500, R"({"error": "Failed to create share"})");
-            }
-            
-            json response;
-            response["success"] = true;
-            response["message"] = "Note shared with " + recipientUsername;
-            return crow::response(200, response.dump());
-            
-        } catch (const std::exception& e) {
-            return crow::response(400, R"({"error": "Invalid request body"})");
-        }
-    });
-
-    // API 9: Create share link with username whitelist
-    CROW_ROUTE(app, "/share/link").methods(crow::HTTPMethod::POST)
+    // API 8: Create share link with username whitelist
+    CROW_ROUTE(app, "/share/link").methods(crow::HTTPMethod::Post)
     ([&db](const crow::request& req) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -336,7 +297,7 @@ int main() {
     });
 
     // API 10: Access note via share link (requires login)
-    CROW_ROUTE(app, "/share/<string>").methods(crow::HTTPMethod::GET)
+    CROW_ROUTE(app, "/share/<string>").methods(crow::HTTPMethod::Get)
     ([&db](const crow::request& req, std::string shareToken) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -356,11 +317,12 @@ int main() {
         response["send_public_key_hex"] = data.send_public_key_hex;
         response["wrapped_key"] = data.wrapped_key;
         response["iv_hex"] = data.iv_hex;
+        response["filename"] = data.filename;
         return crow::response(200, response.dump());
     });
 
     // API 11: Revoke share link
-    CROW_ROUTE(app, "/share/<string>").methods(crow::HTTPMethod::DELETE)
+    CROW_ROUTE(app, "/share/<string>").methods(crow::HTTPMethod::Delete)
     ([&db](const crow::request& req, std::string shareToken) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -380,8 +342,9 @@ int main() {
         return crow::response(200, response.dump());
     });
 
-    // API 12: List notes shared with current user
-    CROW_ROUTE(app, "/shared").methods(crow::HTTPMethod::GET)
+
+    // API 12: List notes current user has shared with others (outgoing shares)
+    CROW_ROUTE(app, "/myshares").methods(crow::HTTPMethod::Get)
     ([&db](const crow::request& req) {
         std::string authHeader = req.get_header_value("Authorization");
         std::string tokenStr = Auth::extractToken(authHeader);
@@ -391,40 +354,21 @@ int main() {
             return crow::response(401, R"({"error": "Unauthorized"})");
         }
         
-        auto shareIds = db.getSharedNotesForUser(auth.user_id);
+        auto shares = db.getOutgoingShares(auth.user_id);
         
         json response = json::array();
-        for (int id : shareIds) {
+        long currentTime = static_cast<long>(std::time(nullptr));
+        
+        for (const auto& share : shares) {
             json item;
-            item["share_id"] = id;
+            item["note_id"] = share.note_id;
+            item["share_link"] = "http://localhost:8080/share/" + share.token;
+            item["expiration_time"] = share.expiration_time;
+            item["is_expired"] = (share.expiration_time < currentTime);
+            item["shared_with"] = share.shared_with;
             response.push_back(item);
         }
         
-        return crow::response(200, response.dump());
-    });
-
-    // API 13: Get shared note data
-    CROW_ROUTE(app, "/shared/<int>").methods(crow::HTTPMethod::GET)
-    ([&db](const crow::request& req, int share_id) {
-        std::string authHeader = req.get_header_value("Authorization");
-        std::string tokenStr = Auth::extractToken(authHeader);
-        TokenPayload auth = Auth::verifyToken(tokenStr);
-        
-        if (!auth.valid) {
-            return crow::response(401, R"({"error": "Unauthorized"})");
-        }
-        
-        auto info = db.getShareInfo(share_id, auth.user_id);
-        if (info.note_id == -1) {
-            return crow::response(404, R"({"error": "Share not found or expired"})");
-        }
-        
-        json response;
-        response["note_id"] = info.note_id;
-        response["send_public_key_hex"] = info.send_public_key_hex;
-        response["new_wrapped_key"] = info.new_wrapped_key;
-        response["encrypted_content"] = info.encrypted_content;
-        response["iv_hex"] = info.iv_hex;
         return crow::response(200, response.dump());
     });
 
