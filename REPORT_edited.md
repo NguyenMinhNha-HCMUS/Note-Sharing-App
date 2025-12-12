@@ -544,26 +544,9 @@ CREATE TABLE UserShares (
 Hệ thống được thiết kế theo mô hình **Client-Server** truyền thống nhưng với sự khác biệt quan trọng trong việc xử lý dữ liệu: **Mô hình Zero-Knowledge**. Server chỉ đóng vai trò là kho lưu trữ dữ liệu mù (blind storage) và bộ điều phối xác thực, trong khi toàn bộ logic mã hóa và giải mã diễn ra tại Client.
 
 **Sơ đồ kiến trúc tổng quát:**
+![aa](./images/Overview.png)
 
-```mermaid
-graph TD
-    User[Người dùng] -->|Giao diện Console| ClientApp[Client Application]
-    
-    subgraph "Client Side (Trusted Zone)"
-        ClientApp -->|Mã hóa/Giải mã| CryptoLib[Crypto Module]
-        ClientApp -->|Quản lý Key| KeyStore[Local Key Storage]
-        ClientApp -->|File I/O| LocalFiles[Upload/Download Folder]
-    end
-    
-    ClientApp -->|HTTPS/JSON| ServerApp[Server Application]
-    
-    subgraph "Server Side (Untrusted Zone)"
-        ServerApp -->|Xác thực JWT| AuthMod[Auth Module]
-        ServerApp -->|Lưu trữ| DB[(SQLite Database)]
-    end
-```
-
-*(Lưu ý: Sơ đồ trên mô tả luồng dữ liệu và các vùng tin cậy)*
+*(Sơ đồ trên mô tả luồng dữ liệu và các vùng tin cậy)*
 
 ### 2.2. Các thành phần chính
 
