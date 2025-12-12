@@ -15,10 +15,6 @@
     "bob": {
       "username": "user2",
       "password": "2"
-    },
-    "charlie": {
-      "username": "user3",
-      "password": "3"
     }
   },
   "test_options": {

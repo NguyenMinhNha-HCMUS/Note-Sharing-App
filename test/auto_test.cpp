@@ -579,6 +579,55 @@ TestResult testAccessControl(TestClient& client) {
         printFail(std::string("Exception: ") + e.what());
     }
 
+    // Test 3.4: Expired share link
+    result.total++;
+    printTest("3.4 - Truy cap link da het han");
+    try {
+        if (TEST_USERS["alice"].note_id != -1) {
+            // Create short-lived link (2 seconds)
+            json body = {
+                {"note_id", TEST_USERS["alice"].note_id},
+                {"duration_seconds", 2},
+                {"user_access_list", json::array({
+                    {
+                        {"username", TEST_USERS["bob"].username},
+                        {"send_public_key_hex", "04" + std::string(128, '2')},
+                        {"wrapped_key", std::string(80, '0')}
+                    }
+                })}
+            };
+            
+            printInfo("Tao link voi thoi han 2 giay...");
+            auto res = client.post("/share/link", body, aliceToken);
+            
+            if (res && res->status == 200) {
+                auto j = json::parse(res->body);
+                std::string short_lived_token = j["token"].get<std::string>();
+                
+                printInfo("Cho 3 giay de link het han...");
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                
+                std::string path = "/share/" + short_lived_token;
+                auto resAccess = client.get(path, bobToken);
+                
+                printResponse(resAccess ? resAccess->status : 0, resAccess ? resAccess->body : "");
+                
+                if (resAccess && resAccess->status == 403) {
+                    printPass("Tu choi truy cap link het han thanh cong");
+                    result.passed++;
+                } else {
+                    printFail("Van truy cap duoc link da het han!");
+                }
+            } else {
+                printFail("Khong tao duoc link test het han");
+            }
+        } else {
+            printFail("Khong co note de test");
+        }
+    } catch (const std::exception& e) {
+        printFail(std::string("Exception: ") + e.what());
+    }
+
     std::cout << "\nAccess Control: " << result.passed << "/" << result.total << " tests passed\n\n";
     return result;
 }

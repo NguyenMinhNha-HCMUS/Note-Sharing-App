@@ -40,7 +40,6 @@ bool AppLogic::registerUser(std::string user, std::string pass) {
     try {
         json j_resp = json::parse(response);
         if (j_resp.contains("success") && j_resp["success"].get<bool>()) {
-            std::cout << "[INFO] Dang ky thanh cong!\n";
             
             // Lưu receive keys vào RAM
             receive_private_key = Crypto::fromHex(keyPair.privateKey);
@@ -66,7 +65,6 @@ bool AppLogic::registerUser(std::string user, std::string pass) {
             
             return true;
         } else {
-            std::cerr << "[ERROR] Dang ky that bai: " << j_resp.value("message", "Loi khong xac dinh") << "\n";
             return false;
         }
     } catch (const json::parse_error& e) {
@@ -133,9 +131,7 @@ bool AppLogic::login(std::string user, std::string pass) {
                 
                 if (receive_private_key.empty()) {
                     std::cerr << "[WARNING] Khong the giai ma Receive Private Key. Khong the nhan file chia se!\n";
-                } else {
-                    std::cout << "[INFO] Da load Receive Private Key tu file.\n";
-                    
+                } else {                    
                     // Load receive_public_key từ server
                     std::string pubkey_response = net->get("/user/" + user + "/pubkey");
                     try {
@@ -151,7 +147,6 @@ bool AppLogic::login(std::string user, std::string pass) {
                 std::cerr << "[WARNING] Khong tim thay file Receive Key. Khong the nhan file chia se!\n";
             }
             
-            std::cout << "[INFO] Dang nhap thanh cong. Token: " << resp.token.substr(0, 10) << "...\n";
             return true;
         } else {
             std::cerr << "[ERROR] Dang nhap that bai: " << resp.message << "\n";
@@ -161,7 +156,6 @@ bool AppLogic::login(std::string user, std::string pass) {
         std::cerr << "[ERROR] Phan tich phan hoi server that bai: " << e.what() << "\n";
         return false;
     } catch (...) {
-        std::cerr << "[ERROR] Loi khong xac dinh khi dang nhap.\n";
         return false;
     }
 }
@@ -333,10 +327,11 @@ void AppLogic::listNotes() {
         // Server returns array of notes directly
         if (j_resp.is_array()) {
             std::cout << "\n--- DANH SACH GHI CHU CUA BAN ---\n";
-            std::cout << std::setw(5) << "ID" << " | " << "NGAY TAO\n";
-            std::cout << "--------------------------------------------------------\n";
+            std::cout << std::setw(5) << "ID" << " | " << std::setw(30) << std::left << "TEN FILE" << " | " << "NGAY TAO\n";
+            std::cout << "----------------------------------------------------------------------\n";
             for (const auto& note : j_resp) {
                 int note_id = note.value("note_id", -1);
+                std::string filename = note.value("filename", "N/A");
                 long created_at = note.value("created_at", 0L);
                 
                 // Convert timestamp to readable format (simple format)
@@ -351,9 +346,9 @@ void AppLogic::listNotes() {
                     time_str = "N/A";
                 }
                 
-                std::cout << std::setw(5) << note_id << " | " << time_str << "\n";
+                std::cout << std::setw(5) << std::right << note_id << " | " << std::setw(30) << std::left << filename << " | " << time_str << "\n";
             }
-            std::cout << "--------------------------------------------------------\n";
+            std::cout << "----------------------------------------------------------------------\n";
         } else if (j_resp.contains("error")) {
             std::cerr << "[ERROR] Liet ke ghi chu that bai: " << j_resp.value("error", "Loi khong xac dinh") << "\n";
         } else {
@@ -475,12 +470,6 @@ std::string AppLogic::createShareLink(int note_id, std::vector<std::string> allo
              std::cerr << "[ERROR] Khong the tai ghi chu ID " << note_id << " de chia se.\n";
              return "";
         }
-        // Debug: print response to see what fields are present
-        std::cout << "[DEBUG] Server response keys: ";
-        for (auto& el : j_resp.items()) {
-            std::cout << el.key() << " ";
-        }
-        std::cout << "\n";
         
         payload = j_resp.get<NoteData>();
     } catch (const std::exception& e) {
@@ -564,7 +553,6 @@ std::string AppLogic::createShareLink(int note_id, std::vector<std::string> allo
         json j_resp = json::parse(response_link);
         if (j_resp.contains("share_link")) {
             std::string link = j_resp["share_link"].get<std::string>();
-            std::cout << "[INFO] Tao link chia se thanh cong: " << link << "\n";
             return link;
         } else {
             std::cerr << "[ERROR] Tao link chia se that bai: " << j_resp.value("message", "Loi khong xac dinh") << "\n";

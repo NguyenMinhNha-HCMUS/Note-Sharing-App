@@ -64,7 +64,6 @@ int main() {
             int id;
             std::cout << "Nhap ID file: "; std::cin >> id;
             app.downloadFile(id);
-            std::cout << "[INFO] File da duoc luu vao thu muc download/\n";
         }
         else if (choice == 5) {
             app.listNotes();
@@ -94,14 +93,12 @@ int main() {
         }
         else if (choice == 9) {
             std::string token;
-            std::cout << "Nhap token chia se: "; std::cin >> token;
-            std::cout << "Ban can dang nhap de truy cap!\n";
+            std::cout << "Nhap link chia se: "; std::cin >> token;
             app.accessSharedNote(token);
-            std::cout << "[INFO] File da duoc luu vao thu muc download/\n";
         }
         else if (choice == 10) {
             std::string token;
-            std::cout << "Nhap token can huy: "; std::cin >> token;
+            std::cout << "Nhap link chia se can huy: "; std::cin >> token;
             app.revokeShare(token);
         }
         else if (choice == 0) break;

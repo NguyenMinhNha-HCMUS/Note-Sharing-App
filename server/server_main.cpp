@@ -183,6 +183,7 @@ int main() {
             json item;
             item["note_id"] = note.note_id;
             item["created_at"] = note.created_at;
+            item["filename"] = note.filename;
             response.push_back(item);
         }
         
